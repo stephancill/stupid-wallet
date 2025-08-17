@@ -1,0 +1,21 @@
+---
+globs: ios-wallet/**/*.swift,safari/**/*.swift
+description: Swift coding and app/extension conventions
+---
+
+# Swift Guidelines
+
+- Prefer clear, descriptive naming; explicit types on public APIs.
+- Use guard clauses and early returns; avoid deep nesting.
+- Keep UI state in `@StateObject`/`@Published` and drive views from state.
+- Bridge PromiseKit to async/await using a small extension when needed.
+- Store selected address in `UserDefaults(suiteName: <AppGroup>)` key `walletAddress`.
+- The native extension handler should:
+  - Read the address from the shared App Group.
+  - Implement `eth_requestAccounts` and `eth_accounts` returning `[address]` or `[]`.
+  - Log minimally and never include sensitive data.
+
+Security & Key Management:
+
+- Use Dawn Key Management to encrypt and store private keys. Never expose raw keys to JS.
+- Implement consent flows before signing; do not auto-approve.

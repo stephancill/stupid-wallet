@@ -6,9 +6,52 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		D4F389882E51FA9D0019E0C0 /* safari.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D4F389702E51FA9D0019E0C0 /* safari.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D4F389922E5208850019E0C0 /* Web3 in Frameworks */ = {isa = PBXBuildFile; productRef = D4F389912E5208850019E0C0 /* Web3 */; };
+		D4F389942E5208850019E0C0 /* Web3ContractABI in Frameworks */ = {isa = PBXBuildFile; productRef = D4F389932E5208850019E0C0 /* Web3ContractABI */; };
+		D4F389962E5208850019E0C0 /* Web3PromiseKit in Frameworks */ = {isa = PBXBuildFile; productRef = D4F389952E5208850019E0C0 /* Web3PromiseKit */; };
+		D4F3899C2E52169F0019E0C0 /* Wallet in Frameworks */ = {isa = PBXBuildFile; productRef = D4F3899B2E52169F0019E0C0 /* Wallet */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		D4F389862E51FA9D0019E0C0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D4F389562E51FA740019E0C0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D4F3896F2E51FA9D0019E0C0;
+			remoteInfo = safari;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		D4F3898D2E51FA9D0019E0C0 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				D4F389882E51FA9D0019E0C0 /* safari.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		D4F3895E2E51FA740019E0C0 /* ios-wallet.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "ios-wallet.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		D4F389702E51FA9D0019E0C0 /* safari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = safari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		D4F389892E51FA9D0019E0C0 /* Exceptions for "safari" folder in "safari" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = D4F3896F2E51FA9D0019E0C0 /* safari */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		D4F389602E51FA740019E0C0 /* ios-wallet */ = {
@@ -16,10 +59,33 @@
 			path = "ios-wallet";
 			sourceTree = "<group>";
 		};
+		D4F389712E51FA9D0019E0C0 /* safari */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				D4F389892E51FA9D0019E0C0 /* Exceptions for "safari" folder in "safari" target */,
+			);
+			explicitFolders = (
+				Resources/_locales,
+				Resources/images,
+			);
+			path = safari;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		D4F3895B2E51FA740019E0C0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D4F389942E5208850019E0C0 /* Web3ContractABI in Frameworks */,
+				D4F389962E5208850019E0C0 /* Web3PromiseKit in Frameworks */,
+				D4F389922E5208850019E0C0 /* Web3 in Frameworks */,
+				D4F3899C2E52169F0019E0C0 /* Wallet in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D4F3896D2E51FA9D0019E0C0 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -33,6 +99,7 @@
 			isa = PBXGroup;
 			children = (
 				D4F389602E51FA740019E0C0 /* ios-wallet */,
+				D4F389712E51FA9D0019E0C0 /* safari */,
 				D4F3895F2E51FA740019E0C0 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,6 +108,7 @@
 			isa = PBXGroup;
 			children = (
 				D4F3895E2E51FA740019E0C0 /* ios-wallet.app */,
+				D4F389702E51FA9D0019E0C0 /* safari.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -55,20 +123,48 @@
 				D4F3895A2E51FA740019E0C0 /* Sources */,
 				D4F3895B2E51FA740019E0C0 /* Frameworks */,
 				D4F3895C2E51FA740019E0C0 /* Resources */,
+				D4F3898D2E51FA9D0019E0C0 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				D4F389872E51FA9D0019E0C0 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				D4F389602E51FA740019E0C0 /* ios-wallet */,
 			);
 			name = "ios-wallet";
 			packageProductDependencies = (
+				D4F389912E5208850019E0C0 /* Web3 */,
+				D4F389932E5208850019E0C0 /* Web3ContractABI */,
+				D4F389952E5208850019E0C0 /* Web3PromiseKit */,
+				D4F3899B2E52169F0019E0C0 /* Wallet */,
 			);
 			productName = "ios-wallet";
 			productReference = D4F3895E2E51FA740019E0C0 /* ios-wallet.app */;
 			productType = "com.apple.product-type.application";
+		};
+		D4F3896F2E51FA9D0019E0C0 /* safari */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D4F3898A2E51FA9D0019E0C0 /* Build configuration list for PBXNativeTarget "safari" */;
+			buildPhases = (
+				D4F3896C2E51FA9D0019E0C0 /* Sources */,
+				D4F3896D2E51FA9D0019E0C0 /* Frameworks */,
+				D4F3896E2E51FA9D0019E0C0 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				D4F389712E51FA9D0019E0C0 /* safari */,
+			);
+			name = safari;
+			packageProductDependencies = (
+			);
+			productName = safari;
+			productReference = D4F389702E51FA9D0019E0C0 /* safari.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -83,6 +179,9 @@
 					D4F3895D2E51FA740019E0C0 = {
 						CreatedOnToolsVersion = 16.4;
 					};
+					D4F3896F2E51FA9D0019E0C0 = {
+						CreatedOnToolsVersion = 16.4;
+					};
 				};
 			};
 			buildConfigurationList = D4F389592E51FA740019E0C0 /* Build configuration list for PBXProject "ios-wallet" */;
@@ -94,18 +193,30 @@
 			);
 			mainGroup = D4F389552E51FA740019E0C0;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				D4F389902E5208850019E0C0 /* XCRemoteSwiftPackageReference "Web3.swift" */,
+				D4F3899A2E52169F0019E0C0 /* XCRemoteSwiftPackageReference "dawn-key-management" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = D4F3895F2E51FA740019E0C0 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				D4F3895D2E51FA740019E0C0 /* ios-wallet */,
+				D4F3896F2E51FA9D0019E0C0 /* safari */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		D4F3895C2E51FA740019E0C0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D4F3896E2E51FA9D0019E0C0 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -122,7 +233,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D4F3896C2E51FA9D0019E0C0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		D4F389872E51FA9D0019E0C0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D4F3896F2E51FA9D0019E0C0 /* safari */;
+			targetProxy = D4F389862E51FA9D0019E0C0 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		D4F389672E51FA760019E0C0 /* Debug */ = {
@@ -302,6 +428,66 @@
 			};
 			name = Release;
 		};
+		D4F3898B2E51FA9D0019E0C0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 6JKMV57Y77;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = safari/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = safari;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"-framework",
+					SafariServices,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "co.za.stephancill.ios-wallet.safari";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		D4F3898C2E51FA9D0019E0C0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 6JKMV57Y77;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = safari/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = safari;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"-framework",
+					SafariServices,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "co.za.stephancill.ios-wallet.safari";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -323,7 +509,58 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		D4F3898A2E51FA9D0019E0C0 /* Build configuration list for PBXNativeTarget "safari" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D4F3898B2E51FA9D0019E0C0 /* Debug */,
+				D4F3898C2E51FA9D0019E0C0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		D4F389902E5208850019E0C0 /* XCRemoteSwiftPackageReference "Web3.swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/Boilertalk/Web3.swift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.8.8;
+			};
+		};
+		D4F3899A2E52169F0019E0C0 /* XCRemoteSwiftPackageReference "dawn-key-management" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/stephancill/dawn-key-management.git";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		D4F389912E5208850019E0C0 /* Web3 */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4F389902E5208850019E0C0 /* XCRemoteSwiftPackageReference "Web3.swift" */;
+			productName = Web3;
+		};
+		D4F389932E5208850019E0C0 /* Web3ContractABI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4F389902E5208850019E0C0 /* XCRemoteSwiftPackageReference "Web3.swift" */;
+			productName = Web3ContractABI;
+		};
+		D4F389952E5208850019E0C0 /* Web3PromiseKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4F389902E5208850019E0C0 /* XCRemoteSwiftPackageReference "Web3.swift" */;
+			productName = Web3PromiseKit;
+		};
+		D4F3899B2E52169F0019E0C0 /* Wallet */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4F3899A2E52169F0019E0C0 /* XCRemoteSwiftPackageReference "dawn-key-management" */;
+			productName = Wallet;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = D4F389562E51FA740019E0C0 /* Project object */;
 }

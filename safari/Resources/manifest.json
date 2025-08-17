@@ -1,0 +1,42 @@
+{
+    "name": "iOS Wallet",
+    "description": "EIP-1193 Ethereum provider with EIP-6963 multi-provider discovery support",
+    "version": "1.0.0",
+    "manifest_version": 3,
+    "permissions": [
+        "scripting",
+        "storage"
+    ],
+    "host_permissions": [
+        "<all_urls>"
+    ],
+    "background": {
+        "service_worker": "background.js"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "<all_urls>"
+            ],
+            "js": [
+                "content.js"
+            ],
+            "run_at": "document_start"
+        },
+        {
+            "matches": [
+                "<all_urls>"
+            ],
+            "js": [
+                "inject.js"
+            ],
+            "run_at": "document_start",
+            "world": "MAIN"
+        }
+    ],
+    "externally_connectable": {
+        "matches": [
+            "<all_urls>"
+        ]
+    }
+}

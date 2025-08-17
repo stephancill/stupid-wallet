@@ -1,0 +1,38 @@
+---
+alwaysApply: true
+---
+
+# Project Architecture and Data Flow
+
+This project contains a SwiftUI iOS app and a Safari Web Extension that injects an EIP-1193 provider with EIP-6963 discovery.
+
+Key files:
+
+- App UI and balances: [ios-wallet/ContentView.swift](mdc:ios-wallet/ContentView.swift)
+- Extension native handler: [safari/SafariWebExtensionHandler.swift](mdc:safari/SafariWebExtensionHandler.swift)
+- Injected provider (MAIN world): [safari/Resources/inject.js](mdc:safari/Resources/inject.js)
+- Content script bridge (isolated world): [safari/Resources/content.js](mdc:safari/Resources/content.js)
+- Background service worker: [safari/Resources/background.js](mdc:safari/Resources/background.js)
+- MV3 manifest: [safari/Resources/manifest.json](mdc:safari/Resources/manifest.json)
+
+Data flow:
+
+1. DApp calls `window.ethereum.request({ method, params })`.
+2. Injected provider posts a message to the window (source: `ios-wallet-inject`).
+3. Content script relays to background via `browser.runtime.sendMessage`.
+4. Background queries native handler or shared storage and responds.
+5. Content script posts the response back (source: `ios-wallet-content`).
+
+Provider discovery (EIP‑6963):
+
+- Injected provider dispatches `eip6963:announceProvider` with `Object.freeze({ info, provider })`.
+- Listens to `eip6963:requestProvider` and re-announces.
+
+Shared storage and app groups:
+
+- The app persists the selected address in `UserDefaults(suiteName: <AppGroup>)` under key `walletAddress`.
+- The extension native handler reads this value to serve `eth_requestAccounts`/`eth_accounts`.
+
+Networking:
+
+- Balances fetched via Web3.swift using public RPCs (Ethereum, Base, Arbitrum One, Optimism).
