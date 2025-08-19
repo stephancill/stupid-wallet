@@ -7,6 +7,7 @@
 
 import SwiftUI
 import UIKit
+import Security
 #if canImport(Web3)
 import Web3
 #if canImport(Web3PromiseKit)
@@ -53,12 +54,17 @@ final class WalletViewModel: ObservableObject {
     }
 
     func loadPersistedAddress() {
-        if let defaults = UserDefaults(suiteName: appGroupId),
-           let addr = defaults.string(forKey: "walletAddress"),
-           !addr.isEmpty {
+        let defaults = UserDefaults(suiteName: appGroupId)
+        if defaults == nil {
+            print("[Wallet] ERROR: Failed to open UserDefaults for app group: \(appGroupId)")
+        }
+        let addr = defaults?.string(forKey: "walletAddress")
+        if let addr = addr, !addr.isEmpty {
+            print("[Wallet] Loaded address from app group store")
             addressHex = addr
             hasWallet = true
         } else {
+            print("[Wallet] No address stored under key 'walletAddress'")
             hasWallet = false
             addressHex = ""
         }
@@ -94,6 +100,9 @@ final class WalletViewModel: ObservableObject {
             hasWallet = true
             if let defaults = UserDefaults(suiteName: appGroupId) {
                 defaults.set(addr, forKey: "walletAddress")
+                print("[Wallet] Saved address to app group store")
+            } else {
+                print("[Wallet] ERROR: Could not open app group defaults to save address")
             }
             Task { await refreshAllBalances() }
             #else
@@ -104,12 +113,55 @@ final class WalletViewModel: ObservableObject {
         }
     }
 
+    func createNewWallet() {
+        errorMessage = nil
+        isSaving = true
+        defer { isSaving = false }
+
+        #if canImport(Web3)
+        do {
+            var keyBytes = [UInt8](repeating: 0, count: 32)
+            let status = SecRandomCopyBytes(kSecRandomDefault, keyBytes.count, &keyBytes)
+            guard status == errSecSuccess else {
+                errorMessage = "Failed to generate secure random key"
+                return
+            }
+
+            let hex = "0x" + keyBytes.map { String(format: "%02x", $0) }.joined()
+            let pk = try EthereumPrivateKey(hexPrivateKey: hex)
+
+            #if canImport(DawnKeyManagement)
+            let wallet = EthereumWallet(privateKey: pk)
+            try wallet.encryptWallet()
+            #endif
+
+            let addr = pk.address.hex(eip55: true)
+            addressHex = addr
+            hasWallet = true
+            if let defaults = UserDefaults(suiteName: appGroupId) {
+                defaults.set(addr, forKey: "walletAddress")
+                print("[Wallet] Saved address to app group store (new wallet)")
+            } else {
+                print("[Wallet] ERROR: Could not open app group defaults to save new wallet")
+            }
+            Task { await refreshAllBalances() }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        #else
+        errorMessage = "Missing Web3.swift package. Add dependency and rebuild."
+        #endif
+    }
+
     func clearWallet() {
         #if canImport(DawnKeyManagement)
         // Optionally, implement a method in DawnKeyManagement to clear keychain entry if exposed
         #endif
         if let defaults = UserDefaults(suiteName: appGroupId) {
             defaults.removeObject(forKey: "walletAddress")
+            print("[Wallet] Cleared saved address from app group store")
+        } else {
+            print("[Wallet] ERROR: Could not open app group defaults to clear address")
         }
         addressHex = ""
         hasWallet = false
@@ -174,6 +226,7 @@ private extension String {
 
 struct ContentView: View {
     @StateObject private var vm = WalletViewModel()
+    @State private var didCopyAddress = false
 
     var body: some View {
         NavigationView {
@@ -206,6 +259,11 @@ struct ContentView: View {
             }
             .buttonStyle(.borderedProminent)
 
+            Button(action: { vm.createNewWallet() }) {
+                if vm.isSaving { ProgressView() } else { Text("Create New Wallet") }
+            }
+            .buttonStyle(.bordered)
+
             if let err = vm.errorMessage, !err.isEmpty {
                 Text(err)
                     .foregroundColor(.red)
@@ -222,9 +280,28 @@ struct ContentView: View {
                 Group {
                     Text("Address")
                         .font(.headline)
-                    Text(vm.addressHex)
-                        .font(.system(.footnote, design: .monospaced))
-                        .contextMenu { Button("Copy") { UIPasteboard.general.string = vm.addressHex } }
+                    HStack(alignment: .center, spacing: 8) {
+                        Text(vm.addressHex)
+                            .font(.system(.footnote, design: .monospaced))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                        Button(action: {
+                            UIPasteboard.general.string = vm.addressHex
+                            didCopyAddress = true
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                                didCopyAddress = false
+                            }
+                        }) {
+                            if didCopyAddress {
+                                Label("Copied", systemImage: "checkmark")
+                            } else {
+                                Label("Copy", systemImage: "doc.on.doc")
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    
                 }
 
                 Divider()

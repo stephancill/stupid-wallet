@@ -18,16 +18,16 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function handleWalletRequest(message, sendResponse) {
   const { method, params } = message;
 
+  console.log("Background received wallet request:", method, params);
+
   try {
     switch (method) {
       case "eth_requestAccounts":
         await handleRequestAccounts(sendResponse);
         break;
-
       case "eth_accounts":
-        await handleGetAccounts(sendResponse);
+        await handleAccounts(sendResponse);
         break;
-
       default:
         sendResponse({ error: `Method ${method} not implemented` });
     }
@@ -43,27 +43,40 @@ async function handleRequestAccounts(sendResponse) {
       method: "eth_requestAccounts",
       params: [],
     });
+
     if (native && native.result) {
       console.log("Returning accounts (native):", native.result);
       sendResponse({ result: native.result });
-      return;
+    } else if (native && native.error) {
+      console.error("Native handler error:", native.error);
+      sendResponse({ error: native.error });
+    } else {
+      console.log("No accounts found");
+      sendResponse({ result: [] });
     }
-    sendResponse({ result: [] });
   } catch (error) {
     console.error("Error requesting accounts:", error);
     sendResponse({ error: "Failed to request accounts" });
   }
 }
 
-async function handleGetAccounts(sendResponse) {
+async function handleAccounts(sendResponse) {
   try {
-    const native = await callNative({ method: "eth_accounts", params: [] });
+    const native = await callNative({
+      method: "eth_accounts",
+      params: [],
+    });
+
     if (native && native.result) {
-      console.log("Returning current accounts (native):", native.result);
+      console.log("Returning accounts (native):", native.result);
       sendResponse({ result: native.result });
-      return;
+    } else if (native && native.error) {
+      console.error("Native handler error:", native.error);
+      sendResponse({ error: native.error });
+    } else {
+      console.log("No accounts found");
+      sendResponse({ result: [] });
     }
-    sendResponse({ result: [] });
   } catch (error) {
     console.error("Error getting accounts:", error);
     sendResponse({ error: "Failed to get accounts" });
@@ -80,14 +93,19 @@ browser.runtime.onStartup.addListener(() => {
 });
 
 async function callNative(payload) {
-  try {
-    // Safari routes native messages to containing app. ID may be ignored but keep for clarity
-    if (browser.runtime.sendNativeMessage.length === 2) {
-      return await browser.runtime.sendNativeMessage(NATIVE_APP_ID, payload);
-    }
-    return await browser.runtime.sendNativeMessage(payload);
-  } catch (e) {
-    console.warn("sendNativeMessage failed:", e);
-    return null;
-  }
+  return new Promise((resolve, reject) => {
+    browser.runtime.sendNativeMessage(
+      NATIVE_APP_ID,
+      payload,
+      function (response) {
+        console.log("Received sendNativeMessage response:");
+        console.log(response);
+        if (browser.runtime.lastError) {
+          reject(new Error(browser.runtime.lastError.message));
+        } else {
+          resolve(response);
+        }
+      }
+    );
+  });
 }

@@ -1,121 +1,104 @@
 //
 //  SafariWebExtensionHandler.swift
-//  safari
+//  testapp Extension
 //
-//  Created by Stephan on 2025/08/17.
+//  Created by Stephan on 2025/08/19.
 //
 
 import SafariServices
 import os.log
 
 class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
-    
-    private let logger = Logger(subsystem: "co.za.stephancill.ios-wallet", category: "SafariExtension")
-    private let appGroupId = "group.co.za.stephancill.ios-wallet" // Must match App Group capability
-    
-    // Connection state in-memory for demo purposes
-    private var isConnected = false
-    
+    private let appGroupId = "group.co.za.stephancill.ios-wallet"
+    private let logger = Logger(subsystem: "co.za.stephancill.ios-wallet", category: "SafariWebExtensionHandler")
+
     func beginRequest(with context: NSExtensionContext) {
-        guard let item = context.inputItems.first as? NSExtensionItem,
-              let userInfo = item.userInfo as? [String: Any] else {
-            logger.error("Invalid request format")
-            completeRequest(context: context, error: "Invalid request format")
-            return
-        }
-        
-        logger.info("Received request: \(userInfo)")
-        
-        // Handle different types of requests
-        if let action = userInfo["action"] as? String {
-            handleLegacyAction(action: action, context: context)
-        } else if let method = userInfo["method"] as? String {
-            handleEthereumMethod(method: method, params: userInfo["params"], context: context)
+        let request = context.inputItems.first as? NSExtensionItem
+
+        let profile: UUID?
+        if #available(iOS 17.0, macOS 14.0, *) {
+            profile = request?.userInfo?[SFExtensionProfileKey] as? UUID
         } else {
-            completeRequest(context: context, error: "No action or method specified")
+            profile = request?.userInfo?["profile"] as? UUID
         }
-    }
-    
-    private func handleLegacyAction(action: String, context: NSExtensionContext) {
+
+        let message: Any?
+        if #available(iOS 15.0, macOS 11.0, *) {
+            message = request?.userInfo?[SFExtensionMessageKey]
+        } else {
+            message = request?.userInfo?["message"]
+        }
+
+        os_log(.default, "Received message from browser.runtime.sendNativeMessage: %@ (profile: %@)", String(describing: message), profile?.uuidString ?? "none")
+
         let response = NSExtensionItem()
+        let responseMessage = handleWalletRequest(message)
         
-        switch action {
-        case "getAddress":
-            response.userInfo = ["result": getSavedAddress() ?? ""]
-        default:
-            response.userInfo = ["error": "Unsupported action: \(action)"]
+        if #available(iOS 15.0, macOS 11.0, *) {
+            response.userInfo = [ SFExtensionMessageKey: responseMessage ]
+        } else {
+            response.userInfo = [ "message": responseMessage ]
         }
-        
-        context.completeRequest(returningItems: [response], completionHandler: nil)
+
+        context.completeRequest(returningItems: [ response ], completionHandler: nil)
     }
-    
-    private func handleEthereumMethod(method: String, params: Any?, context: NSExtensionContext) {
-        logger.info("Handling Ethereum method: \(method)")
-        
+
+    private func handleWalletRequest(_ message: Any?) -> [String: Any] {
+        guard let messageDict = message as? [String: Any],
+              let method = messageDict["method"] as? String else {
+            logger.error("Invalid message format")
+            return ["error": "Invalid message format"]
+        }
+
+        logger.info("Handling wallet request: \(method)")
+
         switch method {
         case "eth_requestAccounts":
-            handleRequestAccounts(context: context)
-            
+            return handleRequestAccounts()
         case "eth_accounts":
-            handleGetAccounts(context: context)
-            
-        case "eth_chainId":
-            completeRequest(context: context, result: "0x1") // Ethereum mainnet
-            
+            return handleAccounts()
         default:
-            completeRequest(context: context, error: "Method \(method) not implemented")
+            logger.warning("Unsupported method: \(method)")
+            return ["error": "Method \(method) not supported"]
         }
     }
-    
-    private func handleRequestAccounts(context: NSExtensionContext) {
-        // In a real implementation, this would:
-        // 1. Check if the user has already authorized this website
-        // 2. If not, show a permission dialog in the main app
-        // 3. Return the accounts the user has authorized
-        
-        // For now, we'll simulate user approval
-        logger.info("Requesting accounts - simulating user approval")
-        
-        // TODO: Implement proper user consent flow
-        // This should communicate with the main iOS app to:
-        // - Show a permission dialog
-        // - Get user approval
-        // - Return the appropriate accounts
-        
-        isConnected = true
-        if let address = getSavedAddress(), !address.isEmpty {
-            completeRequest(context: context, result: [address])
+
+    private func handleRequestAccounts() -> [String: Any] {
+        let address = getSavedAddress()
+        if let address = address {
+            logger.info("Returning address for eth_requestAccounts: \(address)")
+            return ["result": [address]]
         } else {
-            completeRequest(context: context, result: [])
+            logger.info("No address found, returning empty array")
+            return ["result": []]
         }
     }
-    
-    private func handleGetAccounts(context: NSExtensionContext) {
-        // Return accounts only if user has previously connected
-        if let address = getSavedAddress(), isConnected {
-            logger.info("Returning accounts: \(address)")
-            completeRequest(context: context, result: [address])
+
+    private func handleAccounts() -> [String: Any] {
+        let address = getSavedAddress()
+        if let address = address {
+            logger.info("Returning address for eth_accounts: \(address)")
+            return ["result": [address]]
         } else {
-            completeRequest(context: context, result: [])
+            logger.info("No address found, returning empty array")
+            return ["result": []]
         }
     }
 
     private func getSavedAddress() -> String? {
         let defaults = UserDefaults(suiteName: appGroupId)
+        if defaults == nil {
+            logger.error("Failed to open UserDefaults for app group: \(self.appGroupId)")
+            return nil
+        }
         let address = defaults?.string(forKey: "walletAddress")
-        return address
+        if let address = address, !address.isEmpty {
+            logger.info("Loaded address from app group store")
+            return address
+        } else {
+            logger.info("No address stored under key 'walletAddress'")
+            return nil
+        }
     }
-    
-    private func completeRequest(context: NSExtensionContext, result: Any) {
-        let response = NSExtensionItem()
-        response.userInfo = ["result": result]
-        context.completeRequest(returningItems: [response], completionHandler: nil)
-    }
-    
-    private func completeRequest(context: NSExtensionContext, error: String) {
-        let response = NSExtensionItem()
-        response.userInfo = ["error": error]
-        context.completeRequest(returningItems: [response], completionHandler: nil)
-        logger.error("Request completed with error: \(error)")
-    }
+
 }

@@ -8,18 +8,6 @@
 (function () {
   "use strict";
 
-  // Generate UUIDv4 compliant identifier
-  function generateUUID() {
-    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
-      /[xy]/g,
-      function (c) {
-        const r = (Math.random() * 16) | 0;
-        const v = c == "x" ? r : (r & 0x3) | 0x8;
-        return v.toString(16);
-      }
-    );
-  }
-
   // EIP-1193 Provider Implementation
   class EthereumProvider {
     constructor() {
@@ -261,7 +249,7 @@
 
   // EIP-6963 Provider Info
   const providerInfo = {
-    uuid: generateUUID(),
+    uuid: "27f084db-06e7-462e-a6b1-fbc985850d42",
     name: "iOS Wallet",
     icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='96' height='96' viewBox='0 0 96 96'><rect width='96' height='96' rx='12' fill='%234F46E5'/><path d='M48 20L68 40L48 52L28 40L48 20Z' fill='white'/><path d='M28 44L48 56L68 44L48 76L28 44Z' fill='white' opacity='0.8'/></svg>",
     rdns: "co.za.stephancill.ios-wallet",
