@@ -7,7 +7,9 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log("Background received message:", message);
 
   if (message.type === "WALLET_REQUEST") {
-    handleWalletRequest(message, sendResponse);
+    handleWalletRequest(message, sender, sendResponse);
+  } else if (message.type === "WALLET_CONFIRM") {
+    handleWalletConfirm(message, sendResponse);
   } else {
     sendResponse({ error: "Unknown message type" });
   }
@@ -15,19 +17,26 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true; // Keep message channel open for async response
 });
 
-async function handleWalletRequest(message, sendResponse) {
+async function handleWalletRequest(message, sender, sendResponse) {
   const { method, params } = message;
 
   console.log("Background received wallet request:", method, params);
 
   try {
     switch (method) {
-      case "eth_requestAccounts":
-        await handleRequestAccounts(sendResponse);
+      case "eth_requestAccounts": {
+        sendResponse({ pending: true });
         break;
-      case "eth_accounts":
+      }
+      case "eth_accounts": {
         await handleAccounts(sendResponse);
         break;
+      }
+      case "personal_sign": {
+        // Show in-page modal first; complete after approval
+        sendResponse({ pending: true });
+        break;
+      }
       default:
         sendResponse({ error: `Method ${method} not implemented` });
     }
@@ -37,26 +46,42 @@ async function handleWalletRequest(message, sendResponse) {
   }
 }
 
-async function handleRequestAccounts(sendResponse) {
-  try {
-    const native = await callNative({
-      method: "eth_requestAccounts",
-      params: [],
-    });
+async function handleWalletConfirm(message, sendResponse) {
+  const { approved, method, params } = message;
+  console.log("Handling WALLET_CONFIRM:", approved, method, params);
 
-    if (native && native.result) {
-      console.log("Returning accounts (native):", native.result);
-      sendResponse({ result: native.result });
-    } else if (native && native.error) {
-      console.error("Native handler error:", native.error);
-      sendResponse({ error: native.error });
-    } else {
-      console.log("No accounts found");
-      sendResponse({ result: [] });
+  if (!approved) {
+    sendResponse({ error: "User rejected the request" });
+    return;
+  }
+
+  try {
+    if (method === "eth_requestAccounts") {
+      const native = await callNative({
+        method: "eth_requestAccounts",
+        params: [],
+      });
+      if (native && native.result)
+        return sendResponse({ result: native.result });
+      if (native && native.error) return sendResponse({ error: native.error });
+      return sendResponse({ result: [] });
     }
+
+    if (method === "personal_sign") {
+      const native = await callNative({
+        method: "personal_sign",
+        params: params || [],
+      });
+      if (native && native.result)
+        return sendResponse({ result: native.result });
+      if (native && native.error) return sendResponse({ error: native.error });
+      return sendResponse({ error: "Signing failed" });
+    }
+
+    return sendResponse({ error: `Unsupported confirm method ${method}` });
   } catch (error) {
-    console.error("Error requesting accounts:", error);
-    sendResponse({ error: "Failed to request accounts" });
+    console.error("Error confirming:", error);
+    sendResponse({ error: "Failed to confirm request" });
   }
 }
 

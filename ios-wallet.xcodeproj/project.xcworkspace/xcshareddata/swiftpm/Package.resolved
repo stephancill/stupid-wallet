@@ -1,5 +1,5 @@
 {
-  "originHash" : "452bd79b24f90c4a61ea1d3edee308b42833653a08994fccb131276acce46414",
+  "originHash" : "da33421858c8eb03f0330022a5e62d4deb44d829eadfb252770cd9a5db7b8209",
   "pins" : [
     {
       "identity" : "bigint",
@@ -25,7 +25,7 @@
       "location" : "https://github.com/stephancill/dawn-key-management.git",
       "state" : {
         "branch" : "main",
-        "revision" : "c97463e6ff05367b6bbb7f9deb56e96cab2b1872"
+        "revision" : "a9acf0db864b3e099e4d187dafb0ed1f4913c13b"
       }
     },
     {

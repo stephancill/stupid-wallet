@@ -8,15 +8,13 @@
 import SwiftUI
 import UIKit
 import Security
-#if canImport(Web3)
 import Web3
-#if canImport(Web3PromiseKit)
 import Web3PromiseKit
-#endif
-#endif
-#if canImport(PromiseKit)
 import PromiseKit
-#if canImport(PromiseKit)
+import BigInt
+
+private let appGroupId = "group.co.za.stephancill.ios-wallet" // TODO: set your App Group ID in project capabilities
+
 // Bridge PromiseKit to async/await
 extension Promise {
     func async() async throws -> T {
@@ -29,14 +27,6 @@ extension Promise {
         }
     }
 }
-#endif
-#endif
-#if canImport(DawnKeyManagement)
-import DawnKeyManagement
-#endif
-import BigInt
-
-private let appGroupId = "group.co.za.stephancill.ios-wallet" // TODO: set your App Group ID in project capabilities
 
 final class WalletViewModel: ObservableObject {
     @Published var hasWallet: Bool = false
@@ -82,7 +72,7 @@ final class WalletViewModel: ObservableObject {
         }
 
         do {
-            #if canImport(Web3)
+            // Build Web3 key for address derivation
             let pk: EthereumPrivateKey
             if trimmed.lowercased().hasPrefix("0x") {
                 pk = try EthereumPrivateKey(hexPrivateKey: trimmed)
@@ -90,10 +80,18 @@ final class WalletViewModel: ObservableObject {
                 pk = try EthereumPrivateKey(hexPrivateKey: "0x" + trimmed)
             }
 
-            #if canImport(DawnKeyManagement)
-            let wallet = EthereumWallet(privateKey: pk)
-            try wallet.encryptWallet() // stored in Keychain via Secure Enclave
-            #endif
+            // Encrypt and store securely via KeyManagement helper
+            let hexNoPrefix = trimmed.lowercased().hasPrefix("0x") ? String(trimmed.dropFirst(2)) : trimmed
+            var rawBytes: [UInt8] = []
+            rawBytes.reserveCapacity(hexNoPrefix.count / 2)
+            var idx = hexNoPrefix.startIndex
+            while idx < hexNoPrefix.endIndex {
+                let next = hexNoPrefix.index(idx, offsetBy: 2)
+                let byteStr = hexNoPrefix[idx..<next]
+                if let b = UInt8(byteStr, radix: 16) { rawBytes.append(b) }
+                idx = next
+            }
+            try KeyManagement.encryptPrivateKey(rawBytes: rawBytes)
 
             let addr = pk.address.hex(eip55: true)
             addressHex = addr
@@ -105,9 +103,6 @@ final class WalletViewModel: ObservableObject {
                 print("[Wallet] ERROR: Could not open app group defaults to save address")
             }
             Task { await refreshAllBalances() }
-            #else
-            errorMessage = "Missing Web3.swift package. Add dependency and rebuild."
-            #endif
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -118,28 +113,12 @@ final class WalletViewModel: ObservableObject {
         isSaving = true
         defer { isSaving = false }
 
-        #if canImport(Web3)
         do {
-            var keyBytes = [UInt8](repeating: 0, count: 32)
-            let status = SecRandomCopyBytes(kSecRandomDefault, keyBytes.count, &keyBytes)
-            guard status == errSecSuccess else {
-                errorMessage = "Failed to generate secure random key"
-                return
-            }
-
-            let hex = "0x" + keyBytes.map { String(format: "%02x", $0) }.joined()
-            let pk = try EthereumPrivateKey(hexPrivateKey: hex)
-
-            #if canImport(DawnKeyManagement)
-            let wallet = EthereumWallet(privateKey: pk)
-            try wallet.encryptWallet()
-            #endif
-
-            let addr = pk.address.hex(eip55: true)
-            addressHex = addr
+            let wallet = try KeyManagement.createWallet()
+            addressHex = try wallet.address.eip55Description
             hasWallet = true
             if let defaults = UserDefaults(suiteName: appGroupId) {
-                defaults.set(addr, forKey: "walletAddress")
+                defaults.set(addressHex, forKey: "walletAddress")
                 print("[Wallet] Saved address to app group store (new wallet)")
             } else {
                 print("[Wallet] ERROR: Could not open app group defaults to save new wallet")
@@ -148,15 +127,9 @@ final class WalletViewModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
-        #else
-        errorMessage = "Missing Web3.swift package. Add dependency and rebuild."
-        #endif
     }
 
     func clearWallet() {
-        #if canImport(DawnKeyManagement)
-        // Optionally, implement a method in DawnKeyManagement to clear keychain entry if exposed
-        #endif
         if let defaults = UserDefaults(suiteName: appGroupId) {
             defaults.removeObject(forKey: "walletAddress")
             print("[Wallet] Cleared saved address from app group store")
@@ -189,28 +162,20 @@ final class WalletViewModel: ObservableObject {
     }
 
     func fetchBalance(rpcURL: String) async -> String {
-        #if canImport(Web3)
         do {
             let web3 = Web3(rpcURL: rpcURL)
             let address = try EthereumAddress(hex: addressHex, eip55: true)
-            // Web3PromiseKit exposes Promise-returning API
             let qty: EthereumQuantity = try await web3.eth.getBalance(address: address, block: .latest).async()
             return formatWeiToEth(qty.quantity)
         } catch {
             return "Error"
         }
-        #else
-        return "Missing Web3.swift"
-        #endif
     }
 
     func formatWeiToEth(_ wei: BigUInt) -> String {
-        // 1 ETH = 1e18 wei
         let divisor = BigUInt(1_000_000_000_000_000_000)
         let integer = wei / divisor
         let remainder = wei % divisor
-
-        // Format to 6 decimal places
         let remainderStr = String(remainder).leftPadded(to: 18)
         let decimals = String(remainderStr.prefix(6))
         return "\(integer).\(decimals) ETH"

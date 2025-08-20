@@ -40,12 +40,39 @@
         case "eth_chainId":
           return this.chainId;
 
+        case "personal_sign": {
+          if (!params || params.length < 2) {
+            throw new Error("Invalid personal_sign params");
+          }
+          let messageHex, address;
+          const p0 = params[0];
+          const p1 = params[1];
+          if (
+            typeof p0 === "string" &&
+            p0.startsWith("0x") &&
+            typeof p1 === "string"
+          ) {
+            messageHex = p0;
+            address = p1;
+          } else if (
+            typeof p1 === "string" &&
+            p1.startsWith("0x") &&
+            typeof p0 === "string"
+          ) {
+            messageHex = p1;
+            address = p0;
+          } else {
+            messageHex = p0;
+            address = p1;
+          }
+          return this._personalSign(messageHex, address);
+        }
+
         case "eth_getBlockByNumber":
         case "eth_getBalance":
         case "eth_sendTransaction":
         case "eth_signTransaction":
         case "eth_sign":
-        case "personal_sign":
         case "eth_signTypedData":
         case "eth_signTypedData_v1":
         case "eth_signTypedData_v3":
@@ -73,12 +100,20 @@
             return;
           }
 
-          // Remove listener
-          window.removeEventListener("message", responseHandler);
-
           const response = event.data.response;
 
+          // Ignore interim pending responses if any (content doesn't forward them)
+          if (response && response.pending) {
+            return;
+          }
+
+          // Remove listener for final response
+          window.removeEventListener("message", responseHandler);
+
           if (response.error) {
+            if (response.error === "User rejected the request") {
+              console.log("User rejected the connection request");
+            }
             reject(new Error(response.error));
             return;
           }
@@ -107,11 +142,11 @@
           "*"
         );
 
-        // Set timeout to prevent hanging
+        // Set timeout to prevent hanging (45 seconds for embedded modal)
         setTimeout(() => {
           window.removeEventListener("message", responseHandler);
           reject(new Error("Request timeout"));
-        }, 10000);
+        }, 45000);
       });
     }
 
@@ -164,6 +199,51 @@
           window.removeEventListener("message", responseHandler);
           reject(new Error("Request timeout"));
         }, 10000);
+      });
+    }
+
+    // personal_sign helper
+    async _personalSign(messageHex, address) {
+      return new Promise((resolve, reject) => {
+        const requestId = this._generateRequestId();
+
+        const responseHandler = (event) => {
+          if (
+            event.source !== window ||
+            !event.data ||
+            event.data.source !== "ios-wallet-content" ||
+            event.data.requestId !== requestId
+          ) {
+            return;
+          }
+
+          const response = event.data.response;
+          window.removeEventListener("message", responseHandler);
+
+          if (response && response.error) {
+            reject(new Error(response.error));
+            return;
+          }
+
+          resolve(response && response.result);
+        };
+
+        window.addEventListener("message", responseHandler);
+
+        window.postMessage(
+          {
+            source: "ios-wallet-inject",
+            method: "personal_sign",
+            params: [messageHex, address],
+            requestId,
+          },
+          "*"
+        );
+
+        setTimeout(() => {
+          window.removeEventListener("message", responseHandler);
+          reject(new Error("Request timeout"));
+        }, 45000);
       });
     }
 

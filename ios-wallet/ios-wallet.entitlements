@@ -6,5 +6,9 @@
 	<array>
 		<string>group.co.za.stephancill.ios-wallet</string>
 	</array>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)co.za.stephancill.ios-wallet</string>
+	</array>
 </dict>
 </plist>

@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D421553F2E54991F00EF2E37 /* Web3 in Frameworks */ = {isa = PBXBuildFile; productRef = D421553E2E54991F00EF2E37 /* Web3 */; };
+		D42155412E54991F00EF2E37 /* Web3ContractABI in Frameworks */ = {isa = PBXBuildFile; productRef = D42155402E54991F00EF2E37 /* Web3ContractABI */; };
+		D42155432E54991F00EF2E37 /* Web3PromiseKit in Frameworks */ = {isa = PBXBuildFile; productRef = D42155422E54991F00EF2E37 /* Web3PromiseKit */; };
+		D42155452E549B1B00EF2E37 /* Wallet in Frameworks */ = {isa = PBXBuildFile; productRef = D42155442E549B1B00EF2E37 /* Wallet */; };
 		D4F389882E51FA9D0019E0C0 /* safari.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D4F389702E51FA9D0019E0C0 /* safari.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D4F389922E5208850019E0C0 /* Web3 in Frameworks */ = {isa = PBXBuildFile; productRef = D4F389912E5208850019E0C0 /* Web3 */; };
 		D4F389942E5208850019E0C0 /* Web3ContractABI in Frameworks */ = {isa = PBXBuildFile; productRef = D4F389932E5208850019E0C0 /* Web3ContractABI */; };
@@ -54,6 +58,11 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		D421554A2E55E63E00EF2E37 /* shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = shared;
+			sourceTree = "<group>";
+		};
 		D4F389602E51FA740019E0C0 /* ios-wallet */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = "ios-wallet";
@@ -89,17 +98,30 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D42155412E54991F00EF2E37 /* Web3ContractABI in Frameworks */,
+				D42155432E54991F00EF2E37 /* Web3PromiseKit in Frameworks */,
+				D421553F2E54991F00EF2E37 /* Web3 in Frameworks */,
+				D42155452E549B1B00EF2E37 /* Wallet in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		D421553B2E5498C200EF2E37 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		D4F389552E51FA740019E0C0 = {
 			isa = PBXGroup;
 			children = (
+				D421554A2E55E63E00EF2E37 /* shared */,
 				D4F389602E51FA740019E0C0 /* ios-wallet */,
 				D4F389712E51FA9D0019E0C0 /* safari */,
+				D421553B2E5498C200EF2E37 /* Frameworks */,
 				D4F3895F2E51FA740019E0C0 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -131,6 +153,7 @@
 				D4F389872E51FA9D0019E0C0 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
+				D421554A2E55E63E00EF2E37 /* shared */,
 				D4F389602E51FA740019E0C0 /* ios-wallet */,
 			);
 			name = "ios-wallet";
@@ -157,10 +180,15 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
+				D421554A2E55E63E00EF2E37 /* shared */,
 				D4F389712E51FA9D0019E0C0 /* safari */,
 			);
 			name = safari;
 			packageProductDependencies = (
+				D421553E2E54991F00EF2E37 /* Web3 */,
+				D42155402E54991F00EF2E37 /* Web3ContractABI */,
+				D42155422E54991F00EF2E37 /* Web3PromiseKit */,
+				D42155442E549B1B00EF2E37 /* Wallet */,
 			);
 			productName = safari;
 			productReference = D4F389702E51FA9D0019E0C0 /* safari.appex */;
@@ -548,6 +576,26 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		D421553E2E54991F00EF2E37 /* Web3 */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4F389902E5208850019E0C0 /* XCRemoteSwiftPackageReference "Web3.swift" */;
+			productName = Web3;
+		};
+		D42155402E54991F00EF2E37 /* Web3ContractABI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4F389902E5208850019E0C0 /* XCRemoteSwiftPackageReference "Web3.swift" */;
+			productName = Web3ContractABI;
+		};
+		D42155422E54991F00EF2E37 /* Web3PromiseKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4F389902E5208850019E0C0 /* XCRemoteSwiftPackageReference "Web3.swift" */;
+			productName = Web3PromiseKit;
+		};
+		D42155442E549B1B00EF2E37 /* Wallet */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4F3899A2E52169F0019E0C0 /* XCRemoteSwiftPackageReference "dawn-key-management" */;
+			productName = Wallet;
+		};
 		D4F389912E5208850019E0C0 /* Web3 */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = D4F389902E5208850019E0C0 /* XCRemoteSwiftPackageReference "Web3.swift" */;

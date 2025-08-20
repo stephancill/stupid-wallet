@@ -24,7 +24,62 @@ window.addEventListener("message", async (event) => {
 
     console.log("Content script received response:", response);
 
-    // Send response back to injected script
+    // If the request requires in-page confirmation, show embedded modal
+    if (
+      response &&
+      response.pending === true &&
+      event.data.method === "eth_requestAccounts"
+    ) {
+      const approved = await showEmbeddedConnectModal();
+
+      // Send the decision back to background to complete the flow
+      const finalResponse = await browser.runtime.sendMessage({
+        type: "WALLET_CONFIRM",
+        approved,
+        method: event.data.method,
+      });
+
+      // Send final response back to injected script
+      window.postMessage(
+        {
+          source: "ios-wallet-content",
+          requestId: event.data.requestId,
+          response: finalResponse,
+        },
+        "*"
+      );
+      return;
+    }
+
+    if (
+      response &&
+      response.pending === true &&
+      event.data.method === "personal_sign"
+    ) {
+      const [messageHex, address] = normalizePersonalSignParams(
+        event.data.params
+      );
+      const approved = await showEmbeddedSignModal(messageHex, address);
+
+      const finalResponse = await browser.runtime.sendMessage({
+        type: "WALLET_CONFIRM",
+        approved,
+        method: event.data.method,
+        params: [messageHex, address].filter(Boolean),
+      });
+
+      window.postMessage(
+        {
+          source: "ios-wallet-content",
+          requestId: event.data.requestId,
+          response: finalResponse,
+        },
+        "*"
+      );
+      return;
+    }
+
+    // Send immediate response back to injected script (no confirmation needed)
     window.postMessage(
       {
         source: "ios-wallet-content",
@@ -50,6 +105,20 @@ window.addEventListener("message", async (event) => {
   }
 });
 
+// Provide a way for background to push final responses in other flows if needed
+browser.runtime.onMessage.addListener((message) => {
+  if (message && message.type === "WALLET_RESPONSE" && message.requestId) {
+    window.postMessage(
+      {
+        source: "ios-wallet-content",
+        requestId: message.requestId,
+        response: message.response,
+      },
+      "*"
+    );
+  }
+});
+
 // Notify injected script that content script is ready
 window.postMessage(
   {
@@ -58,3 +127,172 @@ window.postMessage(
   },
   "*"
 );
+
+function normalizePersonalSignParams(params) {
+  if (!params || params.length < 2) return [undefined, undefined];
+  const p0 = params[0];
+  const p1 = params[1];
+  if (typeof p0 === "string" && p0.startsWith("0x") && typeof p1 === "string") {
+    return [p0, p1];
+  } else if (
+    typeof p1 === "string" &&
+    p1.startsWith("0x") &&
+    typeof p0 === "string"
+  ) {
+    return [p1, p0];
+  }
+  return [p0, p1];
+}
+
+// Embedded modal using Shadow DOM to avoid CSS conflicts
+async function showEmbeddedConnectModal() {
+  return new Promise((resolve) => {
+    const container = document.createElement("div");
+    container.id = "ios-wallet-modal-root";
+    container.style.position = "fixed";
+    container.style.inset = "0";
+    container.style.zIndex = "2147483647"; // on top
+
+    const shadow = container.attachShadow({ mode: "closed" });
+
+    const style = document.createElement("style");
+    style.textContent = `
+      @keyframes iosw-fade-in { from { opacity: 0 } to { opacity: 1 } }
+      .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); }
+      .panel {
+        position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+        width: min(92vw, 420px); background: #fff; color: #111;
+        border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        animation: iosw-fade-in 120ms ease-out;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        overflow: hidden;
+      }
+      .header { padding: 16px 20px; border-bottom: 1px solid #eee; font-weight: 600; }
+      .body { padding: 16px 20px; }
+      .foot { padding: 16px 20px; display: flex; gap: 10px; justify-content: flex-end; }
+      .btn { padding: 10px 14px; border-radius: 8px; border: 1px solid transparent; cursor: pointer; font-weight: 600; }
+      .btn-secondary { background: #fff; color: #d00; border-color: #e5e5e5; }
+      .btn-primary { background: #2563eb; color: #fff; }
+      .addr { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #f5f5f5; padding: 6px 8px; border-radius: 6px; }
+    `;
+
+    const wrapper = document.createElement("div");
+    wrapper.innerHTML = `
+      <div class="backdrop"></div>
+      <div class="panel" role="dialog" aria-modal="true" aria-label="Connect Wallet">
+        <div class="header">Connect Wallet</div>
+        <div class="body">
+          <div>This site wants to connect to your wallet.</div>
+          <div style="margin-top:8px; font-size:12px; color:#555;">Site: <strong>${location.host}</strong></div>
+        </div>
+        <div class="foot">
+          <button class="btn btn-secondary" id="iosw-reject">Reject</button>
+          <button class="btn btn-primary" id="iosw-approve">Connect</button>
+        </div>
+      </div>
+    `;
+
+    shadow.appendChild(style);
+    shadow.appendChild(wrapper);
+    document.documentElement.appendChild(container);
+
+    const cleanup = () => {
+      container.remove();
+    };
+
+    shadow.getElementById("iosw-reject").addEventListener("click", () => {
+      cleanup();
+      resolve(false);
+    });
+
+    shadow.getElementById("iosw-approve").addEventListener("click", () => {
+      cleanup();
+      resolve(true);
+    });
+  });
+}
+
+async function showEmbeddedSignModal(messageHex, address) {
+  return new Promise((resolve) => {
+    const container = document.createElement("div");
+    container.id = "ios-wallet-modal-root";
+    container.style.position = "fixed";
+    container.style.inset = "0";
+    container.style.zIndex = "2147483647";
+
+    const shadow = container.attachShadow({ mode: "closed" });
+
+    const style = document.createElement("style");
+    style.textContent = `
+      @keyframes iosw-fade-in { from { opacity: 0 } to { opacity: 1 } }
+      .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); }
+      .panel { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(92vw, 520px); background: #fff; color: #111; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); animation: iosw-fade-in 120ms ease-out; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; overflow: hidden; }
+      .header { padding: 16px 20px; border-bottom: 1px solid #eee; font-weight: 600; }
+      .body { padding: 16px 20px; display:flex; flex-direction:column; gap: 10px; }
+      .foot { padding: 16px 20px; display: flex; gap: 10px; justify-content: flex-end; }
+      .btn { padding: 10px 14px; border-radius: 8px; border: 1px solid transparent; cursor: pointer; font-weight: 600; }
+      .btn-secondary { background: #fff; color: #d00; border-color: #e5e5e5; }
+      .btn-primary { background: #2563eb; color: #fff; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .preview { background:#f9fafb; border:1px solid #eee; border-radius:8px; padding:12px; max-height:180px; overflow:auto; }
+      .meta { color:#555; font-size:12px; }
+    `;
+
+    const tryDecode = () => {
+      try {
+        if (messageHex && messageHex.startsWith("0x")) {
+          const bytes = new Uint8Array((messageHex.length - 2) / 2);
+          for (let i = 2, j = 0; i < messageHex.length; i += 2, j++) {
+            bytes[j] = parseInt(messageHex.slice(i, i + 2), 16);
+          }
+          const text = new TextDecoder().decode(bytes);
+          return text;
+        }
+      } catch (_) {}
+      return null;
+    };
+
+    const decoded = tryDecode();
+
+    const wrapper = document.createElement("div");
+    wrapper.innerHTML = `
+      <div class="backdrop"></div>
+      <div class="panel" role="dialog" aria-modal="true" aria-label="Sign Message">
+        <div class="header">Sign Message</div>
+        <div class="body">
+          <div class="meta">Site: <strong>${location.host}</strong></div>
+          <div class="meta">Address: <span class="mono">${
+            address || "(current)"
+          }</span></div>
+          <div class="meta">Method: <span class="mono">personal_sign</span></div>
+          <div>
+            <div style="font-weight:600;margin-bottom:6px;">Message</div>
+            <div class="preview mono">${
+              decoded
+                ? decoded.replace(/</g, "&lt;").replace(/>/g, "&gt;")
+                : messageHex
+            }</div>
+          </div>
+        </div>
+        <div class="foot">
+          <button class="btn btn-secondary" id="iosw-reject">Reject</button>
+          <button class="btn btn-primary" id="iosw-approve">Sign</button>
+        </div>
+      </div>
+    `;
+
+    shadow.appendChild(style);
+    shadow.appendChild(wrapper);
+    document.documentElement.appendChild(container);
+
+    const cleanup = () => container.remove();
+    shadow.getElementById("iosw-reject").addEventListener("click", () => {
+      cleanup();
+      resolve(false);
+    });
+    shadow.getElementById("iosw-approve").addEventListener("click", () => {
+      cleanup();
+      resolve(true);
+    });
+  });
+}
