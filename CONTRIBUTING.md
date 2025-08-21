@@ -1,6 +1,6 @@
-## Contributing to ios-wallet
+## Contributing to stupid wallet
 
-Thank you for your interest in contributing! This project is an iOS Wallet app with a Safari Web Extension that injects an EIP-1193 provider and supports multi-provider discovery via EIP-6963. This document explains the architecture, how to set up your environment, and how to submit contributions.
+Thank you for your interest in contributing! This project is a stupid wallet app with a Safari Web Extension that injects an EIP-1193 provider and supports multi-provider discovery via EIP-6963. This document explains the architecture, how to set up your environment, and how to submit contributions.
 
 ### Architecture Overview
 
@@ -31,7 +31,7 @@ Thank you for your interest in contributing! This project is an iOS Wallet app w
 - **DApp → Provider**: DApp calls `window.ethereum.request({ method })`.
 - **EIP‑6963**: Provider announces over window events; DApps can discover this provider without clobbering `window.ethereum`.
 - **Request path**:
-  1. Injected provider posts a message to the window (`ios-wallet-inject`).
+  1. Injected provider posts a message to the window (`stupid-wallet-inject`).
   2. Content script listens and forwards to background via `browser.runtime.sendMessage`.
   3. Background queries native/handler (or shared storage) and returns the result to content script.
   4. Content script posts the response back to the injected provider, which resolves the original request.
@@ -64,7 +64,7 @@ Thank you for your interest in contributing! This project is an iOS Wallet app w
 
 - **Clone** the repo and open `ios-wallet.xcodeproj` in Xcode.
 - **Enable capabilities (both app and extension targets):**
-  - App Groups: create/use an App Group and set it in code (default: `group.co.za.stephancill.ios-wallet`).
+  - App Groups: create/use an App Group and set it in code (default: `group.co.za.stephancill.stupid-wallet`).
   - Keychain Sharing: required by Dawn Key Management.
 - **Update code constants** if you use a different App Group:
   - In `ContentView.swift`: `appGroupId`.

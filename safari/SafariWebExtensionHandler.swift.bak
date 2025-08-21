@@ -10,8 +10,8 @@ import os.log
 
 class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     
-    private let logger = Logger(subsystem: "co.za.stephancill.ios-wallet", category: "SafariExtension")
-    private let appGroupId = "group.co.za.stephancill.ios-wallet" // Must match App Group capability
+    private let logger = Logger(subsystem: "co.za.stephancill.stupid-walletllet", category: "SafariExtension")
+    private let appGroupId = "group.co.za.stephancill.stupid-walletllet" // Must match App Group capability
     
     // Connection state in-memory for demo purposes
     private var isConnected = false

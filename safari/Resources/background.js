@@ -1,7 +1,7 @@
-// Background script for iOS Wallet Safari Extension
+// Background script for stupid wallet Safari Extension
 // Handles communication between content script and native app
 
-const NATIVE_APP_ID = "co.za.stephancill.ios-wallet"; // Bundle ID of containing app
+const NATIVE_APP_ID = "co.za.stephancill.stupid-walletllet"; // Bundle ID of containing app
 
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log("Background received message:", message);
@@ -183,11 +183,11 @@ async function handleAccounts(sendResponse) {
 
 // Handle extension installation/startup
 browser.runtime.onInstalled.addListener(() => {
-  console.log("iOS Wallet Safari Extension installed");
+  console.log("stupid wallet Safari Extension installed");
 });
 
 browser.runtime.onStartup.addListener(() => {
-  console.log("iOS Wallet Safari Extension started");
+  console.log("stupid wallet Safari Extension started");
 });
 
 async function callNative(payload) {

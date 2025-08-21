@@ -148,7 +148,7 @@
           if (
             event.source !== window ||
             !event.data ||
-            event.data.source !== "ios-wallet-content" ||
+            event.data.source !== "stupid-wallet-content" ||
             event.data.requestId !== requestId
           ) {
             return;
@@ -188,7 +188,7 @@
         // Send request to content script
         window.postMessage(
           {
-            source: "ios-wallet-inject",
+            source: "stupid-wallet-inject",
             method: "eth_requestAccounts",
             params: [],
             requestId: requestId,
@@ -214,7 +214,7 @@
           if (
             event.source !== window ||
             !event.data ||
-            event.data.source !== "ios-wallet-content" ||
+            event.data.source !== "stupid-wallet-content" ||
             event.data.requestId !== requestId
           ) {
             return;
@@ -240,7 +240,7 @@
         // Send request to content script
         window.postMessage(
           {
-            source: "ios-wallet-inject",
+            source: "stupid-wallet-inject",
             method: "eth_accounts",
             params: [],
             requestId: requestId,
@@ -265,7 +265,7 @@
           if (
             event.source !== window ||
             !event.data ||
-            event.data.source !== "ios-wallet-content" ||
+            event.data.source !== "stupid-wallet-content" ||
             event.data.requestId !== requestId
           ) {
             return;
@@ -286,7 +286,7 @@
 
         window.postMessage(
           {
-            source: "ios-wallet-inject",
+            source: "stupid-wallet-inject",
             method: "personal_sign",
             params: [messageHex, address],
             requestId,
@@ -308,7 +308,7 @@
           if (
             event.source !== window ||
             !event.data ||
-            event.data.source !== "ios-wallet-content" ||
+            event.data.source !== "stupid-wallet-content" ||
             event.data.requestId !== requestId
           ) {
             return;
@@ -328,7 +328,7 @@
         window.addEventListener("message", responseHandler);
         window.postMessage(
           {
-            source: "ios-wallet-inject",
+            source: "stupid-wallet-inject",
             method: "eth_chainId",
             params: [],
             requestId,
@@ -349,7 +349,7 @@
           if (
             event.source !== window ||
             !event.data ||
-            event.data.source !== "ios-wallet-content" ||
+            event.data.source !== "stupid-wallet-content" ||
             event.data.requestId !== requestId
           ) {
             return;
@@ -365,7 +365,7 @@
         window.addEventListener("message", responseHandler);
         window.postMessage(
           {
-            source: "ios-wallet-inject",
+            source: "stupid-wallet-inject",
             method: "eth_blockNumber",
             params: [],
             requestId,
@@ -386,7 +386,7 @@
           if (
             event.source !== window ||
             !event.data ||
-            event.data.source !== "ios-wallet-content" ||
+            event.data.source !== "stupid-wallet-content" ||
             event.data.requestId !== requestId
           ) {
             return;
@@ -400,7 +400,7 @@
         window.addEventListener("message", responseHandler);
         window.postMessage(
           {
-            source: "ios-wallet-inject",
+            source: "stupid-wallet-inject",
             method: "wallet_addEthereumChain",
             params: [chainParams],
             requestId,
@@ -421,7 +421,7 @@
           if (
             event.source !== window ||
             !event.data ||
-            event.data.source !== "ios-wallet-content" ||
+            event.data.source !== "stupid-wallet-content" ||
             event.data.requestId !== requestId
           ) {
             return;
@@ -440,7 +440,7 @@
         window.addEventListener("message", responseHandler);
         window.postMessage(
           {
-            source: "ios-wallet-inject",
+            source: "stupid-wallet-inject",
             method: "wallet_switchEthereumChain",
             params: [{ chainId }],
             requestId,
@@ -463,7 +463,7 @@
           if (
             event.source !== window ||
             !event.data ||
-            event.data.source !== "ios-wallet-content" ||
+            event.data.source !== "stupid-wallet-content" ||
             event.data.requestId !== requestId
           ) {
             return;
@@ -484,7 +484,7 @@
 
         window.postMessage(
           {
-            source: "ios-wallet-inject",
+            source: "stupid-wallet-inject",
             method: "eth_signTypedData_v4",
             params: [address, typedDataJSON],
             requestId,
@@ -508,7 +508,7 @@
           if (
             event.source !== window ||
             !event.data ||
-            event.data.source !== "ios-wallet-content" ||
+            event.data.source !== "stupid-wallet-content" ||
             event.data.requestId !== requestId
           ) {
             return;
@@ -529,7 +529,7 @@
 
         window.postMessage(
           {
-            source: "ios-wallet-inject",
+            source: "stupid-wallet-inject",
             method: "eth_sendTransaction",
             params: [tx],
             requestId,
@@ -627,9 +627,9 @@
   // EIP-6963 Provider Info
   const providerInfo = {
     uuid: "27f084db-06e7-462e-a6b1-fbc985850d42",
-    name: "iOS Wallet",
-    icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='96' height='96' viewBox='0 0 96 96'><rect width='96' height='96' rx='12' fill='%234F46E5'/><path d='M48 20L68 40L48 52L28 40L48 20Z' fill='white'/><path d='M28 44L48 56L68 44L48 76L28 44Z' fill='white' opacity='0.8'/></svg>",
-    rdns: "co.za.stephancill.ios-wallet",
+    name: "stupid wallet",
+    icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='96' height='96' viewBox='0 0 96 96'><rect width='96' height='96' rx='12' fill='%2316A34A'/><text x='50%' y='60%' text-anchor='middle' dominant-baseline='middle' font-family='-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif' font-size='64' fill='white'>↑</text></svg>",
+    rdns: "co.za.stephancill.stupid-wallet",
   };
 
   // EIP-6963 Provider Detail
@@ -659,5 +659,5 @@
     window.ethereum = provider;
   }
 
-  console.log("iOS Wallet provider initialized with EIP-6963 support");
+  console.log("stupid wallet provider initialized with EIP-6963 support");
 })();

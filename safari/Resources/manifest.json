@@ -1,5 +1,5 @@
 {
-    "name": "iOS Wallet",
+    "name": "stupid wallet",
     "description": "EIP-1193 Ethereum provider with EIP-6963 multi-provider discovery support",
     "version": "1.0.0",
     "manifest_version": 3,

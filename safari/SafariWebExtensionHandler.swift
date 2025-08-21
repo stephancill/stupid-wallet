@@ -18,7 +18,7 @@ import Web3ContractABI
 
 class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     private let appGroupId = Constants.appGroupId
-    private let logger = Logger(subsystem: "co.za.stephancill.ios-wallet", category: "SafariWebExtensionHandler")
+    private let logger = Logger(subsystem: "co.za.stephancill.stupid-wallet", category: "SafariWebExtensionHandler")
 
     func beginRequest(with context: NSExtensionContext) {
         let request = context.inputItems.first as? NSExtensionItem

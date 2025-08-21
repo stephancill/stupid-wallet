@@ -13,7 +13,7 @@ import Web3PromiseKit
 import PromiseKit
 import BigInt
 
-private let appGroupId = "group.co.za.stephancill.ios-wallet" // TODO: set your App Group ID in project capabilities
+private let appGroupId = "group.co.za.stephancill.stupid-wallet" // TODO: set your App Group ID in project capabilities
 
 // Bridge PromiseKit to async/await
 extension Promise {
@@ -198,7 +198,7 @@ struct ContentView: View {
                     setupView
                 }
             }
-            .navigationTitle("iOS Wallet")
+            .navigationTitle("stupid wallet")
             .toolbar {
                 if vm.hasWallet {
                     Button("Refresh") { Task { await vm.refreshAllBalances() } }

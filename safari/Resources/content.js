@@ -1,7 +1,7 @@
 // Content script - bridge between injected script and extension background
 // This script runs in the isolated world and can access browser APIs
 
-console.log("iOS Wallet content script loaded");
+console.log("stupid wallet content script loaded");
 
 // Listen for messages from the injected script
 window.addEventListener("message", async (event) => {
@@ -9,7 +9,7 @@ window.addEventListener("message", async (event) => {
   if (event.source !== window) return;
 
   // Only handle our wallet messages
-  if (!event.data || event.data.source !== "ios-wallet-inject") return;
+  if (!event.data || event.data.source !== "stupid-wallet-inject") return;
 
   console.log("Content script received message:", event.data);
 
@@ -42,7 +42,7 @@ window.addEventListener("message", async (event) => {
       // Send final response back to injected script
       window.postMessage(
         {
-          source: "ios-wallet-content",
+          source: "stupid-wallet-content",
           requestId: event.data.requestId,
           response: finalResponse,
         },
@@ -70,7 +70,7 @@ window.addEventListener("message", async (event) => {
 
       window.postMessage(
         {
-          source: "ios-wallet-content",
+          source: "stupid-wallet-content",
           requestId: event.data.requestId,
           response: finalResponse,
         },
@@ -96,7 +96,7 @@ window.addEventListener("message", async (event) => {
       });
       window.postMessage(
         {
-          source: "ios-wallet-content",
+          source: "stupid-wallet-content",
           requestId: event.data.requestId,
           response: finalResponse,
         },
@@ -120,7 +120,7 @@ window.addEventListener("message", async (event) => {
       });
       window.postMessage(
         {
-          source: "ios-wallet-content",
+          source: "stupid-wallet-content",
           requestId: event.data.requestId,
           response: finalResponse,
         },
@@ -132,7 +132,7 @@ window.addEventListener("message", async (event) => {
     // Send immediate response back to injected script (no confirmation needed)
     window.postMessage(
       {
-        source: "ios-wallet-content",
+        source: "stupid-wallet-content",
         requestId: event.data.requestId,
         response: response,
       },
@@ -144,7 +144,7 @@ window.addEventListener("message", async (event) => {
     // Send error back to injected script
     window.postMessage(
       {
-        source: "ios-wallet-content",
+        source: "stupid-wallet-content",
         requestId: event.data.requestId,
         response: {
           error: error.message || "Unknown error",
@@ -160,7 +160,7 @@ browser.runtime.onMessage.addListener((message) => {
   if (message && message.type === "WALLET_RESPONSE" && message.requestId) {
     window.postMessage(
       {
-        source: "ios-wallet-content",
+        source: "stupid-wallet-content",
         requestId: message.requestId,
         response: message.response,
       },
@@ -172,7 +172,7 @@ browser.runtime.onMessage.addListener((message) => {
 // Notify injected script that content script is ready
 window.postMessage(
   {
-    source: "ios-wallet-content",
+    source: "stupid-wallet-content",
     type: "ready",
   },
   "*"
@@ -215,7 +215,7 @@ function normalizeSignTypedDataV4Params(params) {
 async function showEmbeddedConnectModal() {
   return new Promise((resolve) => {
     const container = document.createElement("div");
-    container.id = "ios-wallet-modal-root";
+    container.id = "stupid-wallet-modal-root";
     container.style.position = "fixed";
     container.style.inset = "0";
     container.style.zIndex = "2147483647"; // on top
@@ -282,7 +282,7 @@ async function showEmbeddedConnectModal() {
 async function showEmbeddedSignModal(messageHex, address) {
   return new Promise((resolve) => {
     const container = document.createElement("div");
-    container.id = "ios-wallet-modal-root";
+    container.id = "stupid-wallet-modal-root";
     container.style.position = "fixed";
     container.style.inset = "0";
     container.style.zIndex = "2147483647";
@@ -368,7 +368,7 @@ async function showEmbeddedSignModal(messageHex, address) {
 async function showEmbeddedTypedDataModal(typedDataJSON, address) {
   return new Promise((resolve) => {
     const container = document.createElement("div");
-    container.id = "ios-wallet-modal-root";
+    container.id = "stupid-wallet-modal-root";
     container.style.position = "fixed";
     container.style.inset = "0";
     container.style.zIndex = "2147483647";
@@ -443,7 +443,7 @@ async function showEmbeddedTypedDataModal(typedDataJSON, address) {
 async function showEmbeddedTxModal(tx) {
   return new Promise((resolve) => {
     const container = document.createElement("div");
-    container.id = "ios-wallet-modal-root";
+    container.id = "stupid-wallet-modal-root";
     container.style.position = "fixed";
     container.style.inset = "0";
     container.style.zIndex = "2147483647";

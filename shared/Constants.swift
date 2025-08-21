@@ -11,8 +11,8 @@ import BigInt
 
 enum Constants {
     // TODO: Dynamically get this from the entitlements
-    static let accessGroup = "6JKMV57Y77.co.za.stephancill.ios-wallet"
-    static let appGroupId = "group.co.za.stephancill.ios-wallet"
+    static let accessGroup = "6JKMV57Y77.co.za.stephancill.stupid-wallet"
+    static let appGroupId = "group.co.za.stephancill.stupid-wallet"
 
     enum Networks {
         private static let defaultsKey = "customChains"
