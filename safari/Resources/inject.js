@@ -628,7 +628,7 @@
   const providerInfo = {
     uuid: "27f084db-06e7-462e-a6b1-fbc985850d42",
     name: "stupid wallet",
-    icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='96' height='96' viewBox='0 0 96 96'><rect width='96' height='96' rx='12' fill='%2316A34A'/><text x='50%' y='60%' text-anchor='middle' dominant-baseline='middle' font-family='-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif' font-size='64' fill='white'>↑</text></svg>",
+    icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='96' height='96' viewBox='0 0 96 96'><rect width='96' height='96' rx='12' fill='%23FFFFFF'/><text x='50%' y='60%' text-anchor='middle' dominant-baseline='middle' font-family='-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif' font-size='64' fill='%23111'>↑</text></svg>",
     rdns: "co.za.stephancill.stupid-wallet",
   };
 
