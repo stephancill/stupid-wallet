@@ -40,6 +40,22 @@
         case "eth_chainId":
           return this._fetchChainId();
 
+        case "wallet_addEthereumChain": {
+          if (!params || !params[0] || typeof params[0] !== "object") {
+            throw new Error("Invalid wallet_addEthereumChain params");
+          }
+          return this._addEthereumChain(params[0]);
+        }
+
+        case "wallet_switchEthereumChain": {
+          const p = params && params[0];
+          const chainId = p && p.chainId;
+          if (typeof chainId !== "string") {
+            throw new Error("Invalid wallet_switchEthereumChain params");
+          }
+          return this._switchEthereumChain(chainId);
+        }
+
         case "eth_signTypedData_v4": {
           if (!params || params.length < 2) {
             throw new Error("Invalid eth_signTypedData_v4 params");
@@ -320,6 +336,81 @@
           window.removeEventListener("message", responseHandler);
           resolve(this.chainId);
         }, 8000);
+      });
+    }
+
+    async _addEthereumChain(chainParams) {
+      return new Promise((resolve, reject) => {
+        const requestId = this._generateRequestId();
+        const responseHandler = (event) => {
+          if (
+            event.source !== window ||
+            !event.data ||
+            event.data.source !== "ios-wallet-content" ||
+            event.data.requestId !== requestId
+          ) {
+            return;
+          }
+          const response = event.data.response;
+          window.removeEventListener("message", responseHandler);
+          if (response && response.error)
+            return reject(new Error(response.error));
+          resolve(response && response.result);
+        };
+        window.addEventListener("message", responseHandler);
+        window.postMessage(
+          {
+            source: "ios-wallet-inject",
+            method: "wallet_addEthereumChain",
+            params: [chainParams],
+            requestId,
+          },
+          "*"
+        );
+        setTimeout(() => {
+          window.removeEventListener("message", responseHandler);
+          reject(new Error("Request timeout"));
+        }, 45000);
+      });
+    }
+
+    async _switchEthereumChain(chainId) {
+      return new Promise((resolve, reject) => {
+        const requestId = this._generateRequestId();
+        const responseHandler = (event) => {
+          if (
+            event.source !== window ||
+            !event.data ||
+            event.data.source !== "ios-wallet-content" ||
+            event.data.requestId !== requestId
+          ) {
+            return;
+          }
+          const response = event.data.response;
+          window.removeEventListener("message", responseHandler);
+          if (response && response.error)
+            return reject(new Error(response.error));
+          const newChainId = response && response.result;
+          if (typeof newChainId === "string") {
+            this.chainId = newChainId;
+            this._emit("chainChanged", this.chainId);
+          }
+          resolve(newChainId || true);
+        };
+        window.addEventListener("message", responseHandler);
+        window.postMessage(
+          {
+            source: "ios-wallet-inject",
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId }],
+            requestId,
+          },
+          "*"
+        );
+        setTimeout(() => {
+          window.removeEventListener("message", responseHandler);
+          reject(new Error("Request timeout"));
+        }, 45000);
       });
     }
 

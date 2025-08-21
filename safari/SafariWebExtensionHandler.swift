@@ -17,7 +17,7 @@ import Model
 import Web3ContractABI
 
 class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
-    private let appGroupId = "group.co.za.stephancill.ios-wallet"
+    private let appGroupId = Constants.appGroupId
     private let logger = Logger(subsystem: "co.za.stephancill.ios-wallet", category: "SafariWebExtensionHandler")
 
     func beginRequest(with context: NSExtensionContext) {
@@ -76,16 +76,44 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         case "eth_sendTransaction":
             let params = messageDict["params"] as? [Any]
             return handleSendTransaction(params: params)
+        case "wallet_addEthereumChain":
+            let params = messageDict["params"] as? [Any]
+            return handleAddEthereumChain(params: params)
+        case "wallet_switchEthereumChain":
+            let params = messageDict["params"] as? [Any]
+            return handleSwitchEthereumChain(params: params)
         default:
             logger.warning("Unsupported method: \(method)")
             return ["error": "Method \(method) not supported"]
         }
     }
 
-    private func handleChainId() -> [String: Any] {
+    private func handleAddEthereumChain(params: [Any]?) -> [String: Any] {
+        guard let obj = (params?.first as? [String: Any]) else {
+            return ["error": "Invalid wallet_addEthereumChain params"]
+        }
+        guard let chainIdHex = obj["chainId"] as? String, !chainIdHex.isEmpty else {
+            return ["error": "Missing chainId"]
+        }
+        // Persist chain metadata and optional rpcUrls override
         let defaults = UserDefaults(suiteName: appGroupId)
-        let chainIdHex = defaults?.string(forKey: "chainId") ?? "0x1"
-        return ["result": chainIdHex]
+        var chains = defaults?.dictionary(forKey: "customChains") as? [String: [String: Any]] ?? [:]
+        chains[chainIdHex.lowercased()] = obj
+        defaults?.set(chains, forKey: "customChains")
+        // If not current, do not switch automatically
+        return ["result": true]
+    }
+
+    private func handleSwitchEthereumChain(params: [Any]?) -> [String: Any] {
+        guard let obj = (params?.first as? [String: Any]), let chainIdHex = obj["chainId"] as? String else {
+            return ["error": "Invalid wallet_switchEthereumChain params"]
+        }
+        Constants.Networks.setCurrentChainIdHex(chainIdHex)
+        return ["result": chainIdHex.lowercased()]
+    }
+
+    private func handleChainId() -> [String: Any] {
+        return ["result": Constants.Networks.getCurrentChainIdHex()]
     }
 
     private func handleRequestAccounts() -> [String: Any] {
@@ -210,7 +238,7 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         let maxPriorityFeePerGasHex = tx["maxPriorityFeePerGas"] as? String
 
         do {
-            let (rpcURL, chainIdBig) = currentNetwork()
+            let (rpcURL, chainIdBig) = Constants.Networks.currentNetwork()
             let web3 = Web3(rpcURL: rpcURL)
 
             let fromAddr = try EthereumAddress(hex: fromHex, eip55: true)
@@ -268,39 +296,62 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             if dataHex != "0x", let raw = Data(hexString: dataHex) {
                 txToSign.data = try EthereumData(raw)
             }
-
-            // Sign
+            
+            // Sign (non-exportable key) by hashing the tx message and using account.signDigest
             let signedTx: EthereumSignedTransaction
             do {
+                let msg = try computeTransactionMessageToSign(tx: txToSign, chainId: EthereumQuantity(quantity: chainIdBig))
+                let digest = Data(msg).sha3(.keccak256)
                 let account = EthereumAccount(address: try Model.EthereumAddress(hex: saved))
-                var resultError: Error?
-                var signed: EthereumSignedTransaction?
-                try account.accessPrivateKey(accessGroup: Constants.accessGroup) { pkBytes in
-                    let hex = "0x" + pkBytes.map { String(format: "%02x", $0) }.joined()
-                    do {
-                        let pk = try EthereumPrivateKey(hexPrivateKey: hex)
-                        let prom: Promise<EthereumSignedTransaction> = try txToSign.sign(with: pk, chainId: EthereumQuantity(quantity: chainIdBig)).promise
-                        switch awaitPromise(prom) {
-                        case .success(let stx): signed = stx
-                        case .failure(let e): resultError = e
-                        }
-                    } catch {
-                        resultError = error
+                let sig = try account.signDigest([UInt8](digest), accessGroup: Constants.accessGroup)
+
+                // Normalize v per tx type
+                let recId: BigUInt = {
+                    if sig.v == 27 || sig.v == 28 { return BigUInt(sig.v - 27) }
+                    return BigUInt(sig.v)
+                }()
+                let vFinal: EthereumQuantity = {
+                    switch txToSign.transactionType {
+                    case .legacy:
+                        if chainIdBig == 0 { return EthereumQuantity(quantity: recId + 27) }
+                        return EthereumQuantity(quantity: recId + 35 + (chainIdBig * 2))
+                    case .eip1559:
+                        return EthereumQuantity(quantity: recId)
                     }
-                }
-                if let e = resultError { throw e }
-                guard let s = signed else { return ["error": "Failed to sign transaction"] }
-                signedTx = s
+                }()
+
+                let rQ = EthereumQuantity(quantity: BigUInt(sig.r))
+                let sQ = EthereumQuantity(quantity: BigUInt(sig.s))
+
+                let signed = EthereumSignedTransaction(
+                    nonce: txToSign.nonce!,
+                    gasPrice: txToSign.gasPrice ?? EthereumQuantity(quantity: 0),
+                    maxFeePerGas: txToSign.maxFeePerGas,
+                    maxPriorityFeePerGas: txToSign.maxPriorityFeePerGas,
+                    gasLimit: txToSign.gasLimit!,
+                    to: txToSign.to,
+                    value: txToSign.value ?? EthereumQuantity(quantity: 0),
+                    data: txToSign.data,
+                    v: vFinal,
+                    r: rQ,
+                    s: sQ,
+                    chainId: EthereumQuantity(quantity: chainIdBig),
+                    accessList: txToSign.accessList,
+                    transactionType: txToSign.transactionType
+                )
+                signedTx = signed
             } catch {
-                return ["error": "Failed to sign transaction"]
+                logger.error("Signing error: \(String(describing: error))")
+                return ["error": "Failed to sign transaction: \(error.localizedDescription)"]
             }
 
             // Send
             switch awaitPromise(web3.eth.sendRawTransaction(transaction: signedTx)) {
             case .success(let txHash):
                 return ["result": txHash.hex()]
-            case .failure:
-                return ["error": "Failed to send transaction"]
+            case .failure(let e):
+                logger.error("Broadcast failed: \(String(describing: e))")
+                return ["error": "Failed to send transaction: \(e.localizedDescription)"]
             }
         } catch {
             return ["error": "eth_sendTransaction failed"]
@@ -501,25 +552,63 @@ enum EIP712 {
     }
 }
 
+private func computeTransactionMessageToSign(tx: EthereumTransaction, chainId: EthereumQuantity) throws -> Bytes {
+    // Replicate Web3.swift's messageToSign logic via RLP
+    let encoder = RLPEncoder()
+    func encQuantity(_ q: EthereumQuantity) -> RLPItem { RLPItem.bigUInt(q.quantity) }
+    func encData(_ d: EthereumData) -> RLPItem { RLPItem.bytes(d.bytes) }
+    switch tx.transactionType {
+    case .legacy:
+        guard let nonce = tx.nonce, let gasPrice = tx.gasPrice, let gasLimit = tx.gasLimit, let value = tx.value else {
+            throw EthereumSignedTransaction.Error.transactionInvalid
+        }
+        let list: [RLPItem] = [
+            encQuantity(nonce),
+            encQuantity(gasPrice),
+            encQuantity(gasLimit),
+            (tx.to != nil ? RLPItem.bytes(tx.to!.rawAddress) : RLPItem.bytes([])),
+            encQuantity(value),
+            encData(tx.data),
+            encQuantity(chainId),
+            RLPItem.bigUInt(BigUInt(0)),
+            RLPItem.bigUInt(BigUInt(0)),
+        ]
+        return try encoder.encode(RLPItem.array(list))
+    case .eip1559:
+        guard let nonce = tx.nonce,
+              let maxFeePerGas = tx.maxFeePerGas,
+              let maxPriorityFeePerGas = tx.maxPriorityFeePerGas,
+              let gasLimit = tx.gasLimit,
+              let value = tx.value else {
+            throw EthereumSignedTransaction.Error.transactionInvalid
+        }
+        // Build accessList encoding: [[address, [storageKeys...]], ...]
+        var accessListItems: [RLPItem] = []
+        for (address, storageKeys) in tx.accessList {
+            let addrItem = RLPItem.bytes(address.rawAddress)
+            let keysItems = storageKeys.map { RLPItem.bytes($0.bytes) }
+            accessListItems.append(RLPItem.array([addrItem, RLPItem.array(keysItems)]))
+        }
+        let list: [RLPItem] = [
+            encQuantity(chainId),
+            encQuantity(nonce),
+            encQuantity(maxPriorityFeePerGas),
+            encQuantity(maxFeePerGas),
+            encQuantity(gasLimit),
+            (tx.to != nil ? RLPItem.bytes(tx.to!.rawAddress) : RLPItem.bytes([])),
+            encQuantity(value),
+            encData(tx.data),
+            RLPItem.array(accessListItems)
+        ]
+        var raw = try encoder.encode(RLPItem.array(list))
+        raw.insert(0x02, at: 0)
+        return raw
+    }
+}
+
 private extension Data {
     func leftPadded(to length: Int) -> Data { if count >= length { return self }; return Data(repeating: 0, count: length - count) + self }
     func rightPadded(to length: Int) -> Data { if count >= length { return self }; return self + Data(repeating: 0, count: length - count) }
-}
-private func currentNetwork() -> (rpcURL: String, chainId: BigUInt) {
-    let defaults = UserDefaults(suiteName: "group.co.za.stephancill.ios-wallet")
-    let chainIdHex = defaults?.string(forKey: "chainId") ?? "0x1"
-    let hex = chainIdHex.hasPrefix("0x") ? String(chainIdHex.dropFirst(2)) : chainIdHex
-    let chainId = BigUInt(hex, radix: 16) ?? BigUInt(1)
-    let chainId64 = UInt64(chainId.description) ?? 1
-    let rpcURL: String
-    switch chainId64 {
-    case 1: rpcURL = "https://eth.llamarpc.com"
-    case 8453: rpcURL = "https://mainnet.base.org"
-    case 42161: rpcURL = "https://arb1.arbitrum.io/rpc"
-    case 10: rpcURL = "https://mainnet.optimism.io"
-    default: rpcURL = "https://eth.llamarpc.com"
-    }
-    return (rpcURL, chainId)
 }
 
 private extension BigUInt {

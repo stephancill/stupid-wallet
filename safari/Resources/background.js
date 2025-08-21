@@ -40,6 +40,28 @@ async function handleWalletRequest(message, sender, sendResponse) {
           return sendResponse({ error: native.error });
         return sendResponse({ result: "0x1" });
       }
+      case "wallet_addEthereumChain": {
+        const native = await callNative({
+          method: "wallet_addEthereumChain",
+          params,
+        });
+        if (native && native.result)
+          return sendResponse({ result: native.result });
+        if (native && native.error)
+          return sendResponse({ error: native.error });
+        return sendResponse({ error: "Failed to add chain" });
+      }
+      case "wallet_switchEthereumChain": {
+        const native = await callNative({
+          method: "wallet_switchEthereumChain",
+          params,
+        });
+        if (native && native.result)
+          return sendResponse({ result: native.result });
+        if (native && native.error)
+          return sendResponse({ error: native.error });
+        return sendResponse({ error: "Failed to switch chain" });
+      }
       case "eth_signTypedData_v4": {
         // Show in-page modal first; complete after approval
         sendResponse({ pending: true });

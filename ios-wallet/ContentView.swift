@@ -144,16 +144,12 @@ final class WalletViewModel: ObservableObject {
 
     @MainActor
     func refreshAllBalances() async {
-        balances["Ethereum"] = "Loading..."
-        balances["Base"] = "Loading..."
-        balances["Arbitrum One"] = "Loading..."
-        balances["Optimism"] = "Loading..."
+        for (name, _, _) in Constants.Networks.networksList { balances[name] = "Loading..." }
 
         await withTaskGroup(of: (String, String).self) { group in
-            group.addTask { ("Ethereum", await self.fetchBalance(rpcURL: "https://cloudflare-eth.com")) }
-            group.addTask { ("Base", await self.fetchBalance(rpcURL: "https://mainnet.base.org")) }
-            group.addTask { ("Arbitrum One", await self.fetchBalance(rpcURL: "https://arb1.arbitrum.io/rpc")) }
-            group.addTask { ("Optimism", await self.fetchBalance(rpcURL: "https://mainnet.optimism.io")) }
+            for (name, _, url) in Constants.Networks.networksList {
+                group.addTask { (name, await self.fetchBalance(rpcURL: url)) }
+            }
 
             for await (network, balance) in group {
                 balances[network] = balance
@@ -274,10 +270,9 @@ struct ContentView: View {
                 Group {
                     Text("Balances")
                         .font(.headline)
-                    balanceRow(name: "Ethereum", value: vm.balances["Ethereum"])
-                    balanceRow(name: "Base", value: vm.balances["Base"])
-                    balanceRow(name: "Arbitrum One", value: vm.balances["Arbitrum One"])
-                    balanceRow(name: "Optimism", value: vm.balances["Optimism"])
+                    ForEach(Constants.Networks.networksList, id: \.name) { net in
+                        balanceRow(name: net.name, value: vm.balances[net.name])
+                    }
                 }
 
                 Divider()
