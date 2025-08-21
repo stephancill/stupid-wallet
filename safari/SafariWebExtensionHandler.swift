@@ -8,9 +8,13 @@
 import SafariServices
 import os.log
 import Web3
+import Web3PromiseKit
+import PromiseKit
+import BigInt
 import Wallet
 import CryptoSwift
 import Model
+import Web3ContractABI
 
 class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     private let appGroupId = "group.co.za.stephancill.ios-wallet"
@@ -61,13 +65,27 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             return handleRequestAccounts()
         case "eth_accounts":
             return handleAccounts()
+        case "eth_chainId":
+            return handleChainId()
         case "personal_sign":
             let params = messageDict["params"] as? [Any]
             return handlePersonalSign(params: params)
+        case "eth_signTypedData_v4":
+            let params = messageDict["params"] as? [Any]
+            return handleSignTypedDataV4(params: params)
+        case "eth_sendTransaction":
+            let params = messageDict["params"] as? [Any]
+            return handleSendTransaction(params: params)
         default:
             logger.warning("Unsupported method: \(method)")
             return ["error": "Method \(method) not supported"]
         }
+    }
+
+    private func handleChainId() -> [String: Any] {
+        let defaults = UserDefaults(suiteName: appGroupId)
+        let chainIdHex = defaults?.string(forKey: "chainId") ?? "0x1"
+        return ["result": chainIdHex]
     }
 
     private func handleRequestAccounts() -> [String: Any] {
@@ -139,6 +157,156 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         }
     }
 
+    private func handleSignTypedDataV4(params: [Any]?) -> [String: Any] {
+        guard let params = params, params.count >= 2 else {
+            return ["error": "Invalid eth_signTypedData_v4 params"]
+        }
+        let addressParam = params[0]
+        let typedDataParam = params[1]
+        guard let addressHex = addressParam as? String, let typedDataJSON = typedDataParam as? String else {
+            return ["error": "Invalid eth_signTypedData_v4 params"]
+        }
+        guard let saved = getSavedAddress(), saved.caseInsensitiveCompare(addressHex) == .orderedSame else {
+            return ["error": "Unknown address"]
+        }
+
+        do {
+            guard let digest = try EIP712.computeDigest(typedDataJSON: typedDataJSON) else {
+                return ["error": "Failed to compute EIP-712 digest"]
+            }
+            let account = EthereumAccount(address: try Model.EthereumAddress(hex: saved))
+            let signature = try account.signDigest([UInt8](digest), accessGroup: Constants.accessGroup)
+            let canonical = toCanonicalSignature((v: signature.v, r: signature.r, s: signature.s))
+            let sigHex = "0x" + canonical.map { String(format: "%02x", $0) }.joined()
+            return ["result": sigHex]
+        } catch {
+            logger.error("EIP-712 signing failed: \(String(describing: error))")
+            return ["error": "Signing failed"]
+        }
+    }
+
+    private func handleSendTransaction(params: [Any]?) -> [String: Any] {
+        guard let params = params, params.count >= 1 else {
+            return ["error": "Invalid eth_sendTransaction params"]
+        }
+        guard let tx = params[0] as? [String: Any] else {
+            return ["error": "Invalid transaction object"]
+        }
+
+        guard let fromHex = (tx["from"] as? String) ?? getSavedAddress() else {
+            return ["error": "Missing from address"]
+        }
+        guard let saved = getSavedAddress(), saved.caseInsensitiveCompare(fromHex) == .orderedSame else {
+            return ["error": "Unknown address"]
+        }
+
+        let toHex = tx["to"] as? String
+        let valueHex = (tx["value"] as? String) ?? "0x0"
+        let dataHex = (tx["data"] as? String) ?? (tx["input"] as? String) ?? "0x"
+        let gasHex = tx["gas"] as? String ?? tx["gasLimit"] as? String
+        let gasPriceHex = tx["gasPrice"] as? String
+        let nonceHex = tx["nonce"] as? String
+        let maxFeePerGasHex = tx["maxFeePerGas"] as? String
+        let maxPriorityFeePerGasHex = tx["maxPriorityFeePerGas"] as? String
+
+        do {
+            let (rpcURL, chainIdBig) = currentNetwork()
+            let web3 = Web3(rpcURL: rpcURL)
+
+            let fromAddr = try EthereumAddress(hex: fromHex, eip55: true)
+            let toAddr = (toHex != nil && !(toHex!).isEmpty) ? (try? EthereumAddress(hex: toHex!, eip55: true)) : nil
+
+            // Nonce
+            let nonce: EthereumQuantity
+            if let nonceHex = nonceHex, let n = BigUInt.fromHexQuantity(nonceHex) {
+                nonce = EthereumQuantity(quantity: n)
+            } else {
+                switch awaitPromise(web3.eth.getTransactionCount(address: fromAddr, block: .latest)) {
+                case .success(let n): nonce = n
+                case .failure:
+                    return ["error": "Failed to get nonce"]
+                }
+            }
+
+            // Value
+            let weiValue = BigUInt.fromHexQuantity(valueHex) ?? BigUInt.zero
+
+            // Gas limit: provided or sane default
+            let gasLimitQty: BigUInt = {
+                if let gasHex = gasHex, let g = BigUInt.fromHexQuantity(gasHex) { return g }
+                return (dataHex == "0x") ? BigUInt(21000) : BigUInt(100000)
+            }()
+
+            // Build base tx
+            var txToSign = try EthereumTransaction(
+                nonce: nonce,
+                gasPrice: nil,
+                gasLimit: EthereumQuantity(gasLimitQty),
+                to: toAddr,
+                value: EthereumQuantity(quantity: weiValue)
+            )
+
+            // Fees: prefer EIP-1559
+            if let maxFee = BigUInt.fromHexQuantity(maxFeePerGasHex ?? ""), let maxPrio = BigUInt.fromHexQuantity(maxPriorityFeePerGasHex ?? "") {
+                txToSign.transactionType = .eip1559
+                txToSign.maxFeePerGas = EthereumQuantity(quantity: maxFee)
+                txToSign.maxPriorityFeePerGas = EthereumQuantity(quantity: maxPrio)
+            } else {
+                let legacyGasPrice: EthereumQuantity
+                if let gasPriceHex = gasPriceHex, let gp = BigUInt.fromHexQuantity(gasPriceHex) {
+                    legacyGasPrice = EthereumQuantity(quantity: gp)
+                } else {
+                    switch awaitPromise(web3.eth.gasPrice()) {
+                    case .success(let gp): legacyGasPrice = gp
+                    case .failure: return ["error": "Failed to get gas price"]
+                    }
+                }
+                txToSign.gasPrice = legacyGasPrice
+            }
+
+            // Data
+            if dataHex != "0x", let raw = Data(hexString: dataHex) {
+                txToSign.data = try EthereumData(raw)
+            }
+
+            // Sign
+            let signedTx: EthereumSignedTransaction
+            do {
+                let account = EthereumAccount(address: try Model.EthereumAddress(hex: saved))
+                var resultError: Error?
+                var signed: EthereumSignedTransaction?
+                try account.accessPrivateKey(accessGroup: Constants.accessGroup) { pkBytes in
+                    let hex = "0x" + pkBytes.map { String(format: "%02x", $0) }.joined()
+                    do {
+                        let pk = try EthereumPrivateKey(hexPrivateKey: hex)
+                        let prom: Promise<EthereumSignedTransaction> = try txToSign.sign(with: pk, chainId: EthereumQuantity(quantity: chainIdBig)).promise
+                        switch awaitPromise(prom) {
+                        case .success(let stx): signed = stx
+                        case .failure(let e): resultError = e
+                        }
+                    } catch {
+                        resultError = error
+                    }
+                }
+                if let e = resultError { throw e }
+                guard let s = signed else { return ["error": "Failed to sign transaction"] }
+                signedTx = s
+            } catch {
+                return ["error": "Failed to sign transaction"]
+            }
+
+            // Send
+            switch awaitPromise(web3.eth.sendRawTransaction(transaction: signedTx)) {
+            case .success(let txHash):
+                return ["result": txHash.hex()]
+            case .failure:
+                return ["error": "Failed to send transaction"]
+            }
+        } catch {
+            return ["error": "eth_sendTransaction failed"]
+        }
+    }
+
     private func getSavedAddress() -> String? {
         let defaults = UserDefaults(suiteName: appGroupId)
         if defaults == nil {
@@ -157,6 +325,224 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 }
 
 // Helpers
+// Minimal EIP-712 encoder for v4 (typedData JSON)
+enum EIP712 {
+    struct TypeDef { let name: String; let type: String }
+
+    static func computeDigest(typedDataJSON: String) throws -> Data? {
+        guard let jsonData = typedDataJSON.data(using: .utf8) else { return nil }
+        let obj = try JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any]
+        guard let dict = obj,
+              let types = dict["types"] as? [String: Any],
+              let primaryType = dict["primaryType"] as? String,
+              let domain = dict["domain"],
+              let message = dict["message"]
+        else { return nil }
+
+        var typeMap: [String: [TypeDef]] = [:]
+        for (k, v) in types {
+            guard let arr = v as? [[String: Any]] else { continue }
+            typeMap[k] = arr.compactMap { item in
+                guard let n = item["name"] as? String, let t = item["type"] as? String else { return nil }
+                return TypeDef(name: n, type: t)
+            }
+        }
+
+        let domainHash = try hashStruct(typeName: "EIP712Domain", value: domain, types: typeMap)
+        let messageHash = try hashStruct(typeName: primaryType, value: message, types: typeMap)
+
+        var prefix: [UInt8] = [0x19, 0x01]
+        prefix.append(contentsOf: [UInt8](domainHash))
+        prefix.append(contentsOf: [UInt8](messageHash))
+        let digest = prefix.sha3(.keccak256)
+        return Data(digest)
+    }
+
+    private static func encodeType(_ primaryType: String, types: [String: [TypeDef]]) -> String {
+        func collectDependencies(of type: String, into set: inout Set<String>) {
+            guard let fields = types[type] else { return }
+            for f in fields {
+                let base = baseType(of: f.type)
+                if types[base] != nil && base != type {
+                    if !set.contains(base) {
+                        set.insert(base)
+                        collectDependencies(of: base, into: &set)
+                    }
+                }
+            }
+        }
+        var deps: Set<String> = []
+        collectDependencies(of: primaryType, into: &deps)
+        let ordered = [primaryType] + Array(deps).sorted()
+        return ordered.compactMap { typeName in
+            guard let fields = types[typeName] else { return nil }
+            let inner = fields.map { "\($0.type) \($0.name)" }.joined(separator: ",")
+            return "\(typeName)(\(inner))"
+        }.joined()
+    }
+
+    private static func typeHash(_ type: String, types: [String: [TypeDef]]) -> Data {
+        let enc = encodeType(type, types: types)
+        return Data([UInt8](enc.utf8)).sha3(.keccak256)
+    }
+
+    private static func hashStruct(typeName: String, value: Any, types: [String: [TypeDef]]) throws -> Data {
+        let tHash = typeHash(typeName, types: types)
+        let fields: [TypeDef]
+        if let f = types[typeName] {
+            fields = f
+        } else if typeName == "EIP712Domain" {
+            fields = [
+                TypeDef(name: "name", type: "string"),
+                TypeDef(name: "version", type: "string"),
+                TypeDef(name: "chainId", type: "uint256"),
+                TypeDef(name: "verifyingContract", type: "address"),
+                TypeDef(name: "salt", type: "bytes32"),
+            ]
+        } else {
+            return Data([UInt8](tHash))
+        }
+        var enc: [UInt8] = []
+        enc.append(contentsOf: [UInt8](tHash))
+        let valDict = value as? [String: Any] ?? [:]
+        for field in fields {
+            let v = valDict[field.name]
+            let hashed = try encodeValue(fieldType: field.type, value: v, types: types)
+            enc.append(contentsOf: [UInt8](hashed))
+        }
+        return Data(enc).sha3(.keccak256)
+    }
+
+    private static func encodeValue(fieldType: String, value: Any?, types: [String: [TypeDef]]) throws -> Data {
+        if let (base, isArray) = parseArray(fieldType), isArray {
+            let arr = value as? [Any] ?? []
+            var out: [UInt8] = []
+            for el in arr {
+                let h = try encodeValue(fieldType: base, value: el, types: types)
+                out.append(contentsOf: [UInt8](h))
+            }
+            return Data(out).sha3(.keccak256)
+        }
+        let base = baseType(of: fieldType)
+        if let _ = types[base] {
+            return try hashStruct(typeName: base, value: value ?? [:], types: types)
+        }
+        switch base.lowercased() {
+        case "address":
+            if let s = value as? String, let addr = try? EthereumAddress(hex: s, eip55: false) {
+                return Data(addr.rawAddress).leftPadded(to: 32)
+            }
+            return Data(count: 32)
+        case let t where t.hasPrefix("uint"):
+            if let b = try? parseBigUInt(value) { return b.serialize().leftPadded(to: 32) }
+            return Data(count: 32)
+        case let t where t.hasPrefix("int"):
+            if let b = try? parseBigInt(value) { return twosComplement32Bytes(b) }
+            return Data(count: 32)
+        case "bool":
+            let v = (value as? Bool) == true ? 1 : 0
+            var data = Data(count: 31)
+            data.append(UInt8(v))
+            return data
+        case "bytes":
+            if let s = value as? String, let d = Data(hexString: s) { return d.sha3(.keccak256) }
+            if let d = value as? Data { return d.sha3(.keccak256) }
+            return Data(count: 32)
+        case let t where t.hasPrefix("bytes"):
+            let lenStr = String(t.dropFirst("bytes".count))
+            if let len = Int(lenStr), len >= 1 && len <= 32 {
+                if let s = value as? String, let d = Data(hexString: s) { return d.rightPadded(to: 32) }
+                if let d = value as? Data { return d.rightPadded(to: 32) }
+            }
+            return Data(count: 32)
+        case "string":
+            if let s = value as? String { return Data(s.utf8).sha3(.keccak256) }
+            return Data(count: 32)
+        default:
+            return Data(count: 32)
+        }
+    }
+
+    private static func parseArray(_ type: String) -> (String, Bool)? {
+        if let range = type.range(of: "[") { return (String(type[..<range.lowerBound]), true) }
+        return (type, false)
+    }
+
+    private static func baseType(of type: String) -> String {
+        return String(type.split(separator: "[").first ?? Substring(type))
+    }
+
+    private static func parseBigUInt(_ value: Any?) throws -> BigUInt {
+        if let n = value as? BigUInt { return n }
+        if let i = value as? Int { return BigUInt(i) }
+        if let s = value as? String {
+            if s.hasPrefix("0x"), let n = BigUInt(s.dropFirst(2), radix: 16) { return n }
+            if let n = BigUInt(s, radix: 10) { return n }
+        }
+        return BigUInt.zero
+    }
+
+    private static func parseBigInt(_ value: Any?) throws -> BigInt {
+        if let n = value as? BigInt { return n }
+        if let i = value as? Int { return BigInt(i) }
+        if let s = value as? String {
+            if s.hasPrefix("0x"), let n = BigInt(s.dropFirst(2), radix: 16) { return n }
+            if let n = BigInt(s, radix: 10) { return n }
+        }
+        return BigInt.zero
+    }
+
+    private static func twosComplement32Bytes(_ value: BigInt) -> Data {
+        let two256 = BigInt(1) << 256
+        var normalized = value % two256
+        if normalized < 0 { normalized += two256 }
+        let mag = BigUInt(normalized)
+        return mag.serialize().leftPadded(to: 32)
+    }
+}
+
+private extension Data {
+    func leftPadded(to length: Int) -> Data { if count >= length { return self }; return Data(repeating: 0, count: length - count) + self }
+    func rightPadded(to length: Int) -> Data { if count >= length { return self }; return self + Data(repeating: 0, count: length - count) }
+}
+private func currentNetwork() -> (rpcURL: String, chainId: BigUInt) {
+    let defaults = UserDefaults(suiteName: "group.co.za.stephancill.ios-wallet")
+    let chainIdHex = defaults?.string(forKey: "chainId") ?? "0x1"
+    let hex = chainIdHex.hasPrefix("0x") ? String(chainIdHex.dropFirst(2)) : chainIdHex
+    let chainId = BigUInt(hex, radix: 16) ?? BigUInt(1)
+    let chainId64 = UInt64(chainId.description) ?? 1
+    let rpcURL: String
+    switch chainId64 {
+    case 1: rpcURL = "https://eth.llamarpc.com"
+    case 8453: rpcURL = "https://mainnet.base.org"
+    case 42161: rpcURL = "https://arb1.arbitrum.io/rpc"
+    case 10: rpcURL = "https://mainnet.optimism.io"
+    default: rpcURL = "https://eth.llamarpc.com"
+    }
+    return (rpcURL, chainId)
+}
+
+private extension BigUInt {
+    static func fromHexQuantity(_ hex: String) -> BigUInt? {
+        guard !hex.isEmpty else { return nil }
+        let s = hex.hasPrefix("0x") ? String(hex.dropFirst(2)) : hex
+        return BigUInt(s, radix: 16)
+    }
+}
+
+private func awaitPromise<T>(_ promise: Promise<T>) -> Swift.Result<T, Error> {
+    let semaphore = DispatchSemaphore(value: 0)
+    var result: Swift.Result<T, Error>!
+    promise.done { value in
+        result = .success(value)
+        semaphore.signal()
+    }.catch { error in
+        result = .failure(error)
+        semaphore.signal()
+    }
+    _ = semaphore.wait(timeout: .now() + 30)
+    return result
+}
 private func toCanonicalSignature(_ signature: (v: UInt, r: [UInt8], s: [UInt8])) -> Data {
     // Ensure r, s are 32-byte each
     let rData = Data(signature.r)

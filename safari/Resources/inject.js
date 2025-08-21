@@ -38,7 +38,43 @@
           return this._getAccounts();
 
         case "eth_chainId":
-          return this.chainId;
+          return this._fetchChainId();
+
+        case "eth_signTypedData_v4": {
+          if (!params || params.length < 2) {
+            throw new Error("Invalid eth_signTypedData_v4 params");
+          }
+          // Normalize params: prefer [address, typedDataJSON]
+          let address, typedDataJSON;
+          const p0 = params[0];
+          const p1 = params[1];
+          if (typeof p0 === "string" && typeof p1 === "string") {
+            // Either [address, json] or [json, address]
+            if (p0.startsWith("0x")) {
+              address = p0;
+              typedDataJSON = p1;
+            } else if (p1.startsWith("0x")) {
+              address = p1;
+              typedDataJSON = p0;
+            } else {
+              // Fallback assume [address, json]
+              address = p0;
+              typedDataJSON = p1;
+            }
+          } else {
+            address = p0;
+            typedDataJSON = p1;
+          }
+          return this._signTypedDataV4(address, typedDataJSON);
+        }
+
+        case "eth_sendTransaction": {
+          if (!params || params.length < 1 || typeof params[0] !== "object") {
+            throw new Error("Invalid eth_sendTransaction params");
+          }
+          const tx = params[0] || {};
+          return this._sendTransaction(tx);
+        }
 
         case "personal_sign": {
           if (!params || params.length < 2) {
@@ -70,13 +106,12 @@
 
         case "eth_getBlockByNumber":
         case "eth_getBalance":
-        case "eth_sendTransaction":
         case "eth_signTransaction":
         case "eth_sign":
         case "eth_signTypedData":
         case "eth_signTypedData_v1":
         case "eth_signTypedData_v3":
-        case "eth_signTypedData_v4":
+          // eth_signTypedData_v4 and eth_sendTransaction handled above
           throw new Error(`Method ${method} not implemented yet`);
 
         default:
@@ -244,6 +279,137 @@
           window.removeEventListener("message", responseHandler);
           reject(new Error("Request timeout"));
         }, 45000);
+      });
+    }
+
+    async _fetchChainId() {
+      return new Promise((resolve, reject) => {
+        const requestId = this._generateRequestId();
+        const responseHandler = (event) => {
+          if (
+            event.source !== window ||
+            !event.data ||
+            event.data.source !== "ios-wallet-content" ||
+            event.data.requestId !== requestId
+          ) {
+            return;
+          }
+          const response = event.data.response;
+          window.removeEventListener("message", responseHandler);
+          if (response && response.error) {
+            reject(new Error(response.error));
+            return;
+          }
+          if (response && response.result) {
+            this.chainId = response.result;
+            this._emit("chainChanged", this.chainId);
+          }
+          resolve((response && response.result) || this.chainId);
+        };
+        window.addEventListener("message", responseHandler);
+        window.postMessage(
+          {
+            source: "ios-wallet-inject",
+            method: "eth_chainId",
+            params: [],
+            requestId,
+          },
+          "*"
+        );
+        setTimeout(() => {
+          window.removeEventListener("message", responseHandler);
+          resolve(this.chainId);
+        }, 8000);
+      });
+    }
+
+    // eth_signTypedData_v4 helper
+    async _signTypedDataV4(address, typedDataJSON) {
+      return new Promise((resolve, reject) => {
+        const requestId = this._generateRequestId();
+
+        const responseHandler = (event) => {
+          if (
+            event.source !== window ||
+            !event.data ||
+            event.data.source !== "ios-wallet-content" ||
+            event.data.requestId !== requestId
+          ) {
+            return;
+          }
+
+          const response = event.data.response;
+          window.removeEventListener("message", responseHandler);
+
+          if (response && response.error) {
+            reject(new Error(response.error));
+            return;
+          }
+
+          resolve(response && response.result);
+        };
+
+        window.addEventListener("message", responseHandler);
+
+        window.postMessage(
+          {
+            source: "ios-wallet-inject",
+            method: "eth_signTypedData_v4",
+            params: [address, typedDataJSON],
+            requestId,
+          },
+          "*"
+        );
+
+        setTimeout(() => {
+          window.removeEventListener("message", responseHandler);
+          reject(new Error("Request timeout"));
+        }, 45000);
+      });
+    }
+
+    // eth_sendTransaction helper
+    async _sendTransaction(tx) {
+      return new Promise((resolve, reject) => {
+        const requestId = this._generateRequestId();
+
+        const responseHandler = (event) => {
+          if (
+            event.source !== window ||
+            !event.data ||
+            event.data.source !== "ios-wallet-content" ||
+            event.data.requestId !== requestId
+          ) {
+            return;
+          }
+
+          const response = event.data.response;
+          window.removeEventListener("message", responseHandler);
+
+          if (response && response.error) {
+            reject(new Error(response.error));
+            return;
+          }
+
+          resolve(response && response.result);
+        };
+
+        window.addEventListener("message", responseHandler);
+
+        window.postMessage(
+          {
+            source: "ios-wallet-inject",
+            method: "eth_sendTransaction",
+            params: [tx],
+            requestId,
+          },
+          "*"
+        );
+
+        setTimeout(() => {
+          window.removeEventListener("message", responseHandler);
+          reject(new Error("Request timeout"));
+        }, 60000);
       });
     }
 

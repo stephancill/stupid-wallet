@@ -32,7 +32,25 @@ async function handleWalletRequest(message, sender, sendResponse) {
         await handleAccounts(sendResponse);
         break;
       }
+      case "eth_chainId": {
+        const native = await callNative({ method: "eth_chainId", params: [] });
+        if (native && native.result)
+          return sendResponse({ result: native.result });
+        if (native && native.error)
+          return sendResponse({ error: native.error });
+        return sendResponse({ result: "0x1" });
+      }
+      case "eth_signTypedData_v4": {
+        // Show in-page modal first; complete after approval
+        sendResponse({ pending: true });
+        break;
+      }
       case "personal_sign": {
+        // Show in-page modal first; complete after approval
+        sendResponse({ pending: true });
+        break;
+      }
+      case "eth_sendTransaction": {
         // Show in-page modal first; complete after approval
         sendResponse({ pending: true });
         break;
@@ -76,6 +94,28 @@ async function handleWalletConfirm(message, sendResponse) {
         return sendResponse({ result: native.result });
       if (native && native.error) return sendResponse({ error: native.error });
       return sendResponse({ error: "Signing failed" });
+    }
+
+    if (method === "eth_signTypedData_v4") {
+      const native = await callNative({
+        method: "eth_signTypedData_v4",
+        params: params || [],
+      });
+      if (native && native.result)
+        return sendResponse({ result: native.result });
+      if (native && native.error) return sendResponse({ error: native.error });
+      return sendResponse({ error: "Signing failed" });
+    }
+
+    if (method === "eth_sendTransaction") {
+      const native = await callNative({
+        method: "eth_sendTransaction",
+        params: params || [],
+      });
+      if (native && native.result)
+        return sendResponse({ result: native.result });
+      if (native && native.error) return sendResponse({ error: native.error });
+      return sendResponse({ error: "Transaction failed" });
     }
 
     return sendResponse({ error: `Unsupported confirm method ${method}` });
