@@ -241,8 +241,8 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             let (rpcURL, chainIdBig) = Constants.Networks.currentNetwork()
             let web3 = Web3(rpcURL: rpcURL)
 
-            let fromAddr = try EthereumAddress(hex: fromHex, eip55: true)
-            let toAddr = (toHex != nil && !(toHex!).isEmpty) ? (try? EthereumAddress(hex: toHex!, eip55: true)) : nil
+            let fromAddr = try EthereumAddress(hex: fromHex, eip55: false)
+            let toAddr = (toHex != nil && !(toHex!).isEmpty) ? (try? EthereumAddress(hex: toHex!, eip55: false)) : nil
 
             // Nonce
             let nonce: EthereumQuantity
@@ -294,6 +294,19 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
             // Data
             if dataHex != "0x", let raw = Data(hexString: dataHex) {
+                // Require 'to' for data txs to avoid accidental contract creation
+                if toAddr == nil {
+                    return ["error": "Missing 'to' for transaction with data"]
+                }
+                // Optional: Ensure target has code
+                switch awaitPromise(web3.eth.getCode(address: toAddr!, block: .latest)) {
+                case .success(let code):
+                    if code.bytes.isEmpty {
+                        return ["error": "Target address has no contract code"]
+                    }
+                case .failure:
+                    break
+                }
                 txToSign.data = try EthereumData(raw)
             }
             
