@@ -3,6 +3,15 @@
     "description": "EIP-1193 Ethereum provider with EIP-6963 multi-provider discovery support",
     "version": "1.0.0",
     "manifest_version": 3,
+    "default_locale": "en",
+    "icons": {
+        "48": "images/icon-48.png",
+        "64": "images/icon-64.png",
+        "96": "images/icon-96.png",
+        "128": "images/icon-128.png",
+        "256": "images/icon-256.png",
+        "512": "images/icon-512.png"
+    },
     "permissions": [
         "scripting",
         "storage",

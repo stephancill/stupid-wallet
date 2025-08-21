@@ -1,7 +1,7 @@
 // Background script for stupid wallet Safari Extension
 // Handles communication between content script and native app
 
-const NATIVE_APP_ID = "co.za.stephancill.stupid-walletllet"; // Bundle ID of containing app
+const NATIVE_APP_ID = "co.za.stephancill.stupid-wallet"; // Bundle ID of containing app
 
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log("Background received message:", message);
