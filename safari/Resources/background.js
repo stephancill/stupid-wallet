@@ -40,6 +40,17 @@ async function handleWalletRequest(message, sender, sendResponse) {
           return sendResponse({ error: native.error });
         return sendResponse({ result: "0x1" });
       }
+      case "eth_blockNumber": {
+        const native = await callNative({
+          method: "eth_blockNumber",
+          params: [],
+        });
+        if (native && native.result)
+          return sendResponse({ result: native.result });
+        if (native && native.error)
+          return sendResponse({ error: native.error });
+        return sendResponse({ error: "Failed to get block number" });
+      }
       case "wallet_addEthereumChain": {
         const native = await callNative({
           method: "wallet_addEthereumChain",

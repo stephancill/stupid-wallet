@@ -40,6 +40,9 @@
         case "eth_chainId":
           return this._fetchChainId();
 
+        case "eth_blockNumber":
+          return this._blockNumber();
+
         case "wallet_addEthereumChain": {
           if (!params || !params[0] || typeof params[0] !== "object") {
             throw new Error("Invalid wallet_addEthereumChain params");
@@ -336,6 +339,43 @@
           window.removeEventListener("message", responseHandler);
           resolve(this.chainId);
         }, 8000);
+      });
+    }
+
+    async _blockNumber() {
+      return new Promise((resolve, reject) => {
+        const requestId = this._generateRequestId();
+        const responseHandler = (event) => {
+          if (
+            event.source !== window ||
+            !event.data ||
+            event.data.source !== "ios-wallet-content" ||
+            event.data.requestId !== requestId
+          ) {
+            return;
+          }
+          const response = event.data.response;
+          window.removeEventListener("message", responseHandler);
+          if (response && response.error) {
+            reject(new Error(response.error));
+            return;
+          }
+          resolve(response && response.result);
+        };
+        window.addEventListener("message", responseHandler);
+        window.postMessage(
+          {
+            source: "ios-wallet-inject",
+            method: "eth_blockNumber",
+            params: [],
+            requestId,
+          },
+          "*"
+        );
+        setTimeout(() => {
+          window.removeEventListener("message", responseHandler);
+          reject(new Error("Request timeout"));
+        }, 10000);
       });
     }
 

@@ -225,14 +225,14 @@ async function showEmbeddedConnectModal() {
     const style = document.createElement("style");
     style.textContent = `
       @keyframes iosw-fade-in { from { opacity: 0 } to { opacity: 1 } }
-      .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); }
+      .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 2147483647; }
       .panel {
         position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
         width: min(92vw, 420px); background: #fff; color: #111;
         border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.2);
         animation: iosw-fade-in 120ms ease-out;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        overflow: hidden;
+        overflow: hidden; z-index: 2147483647;
       }
       .header { padding: 16px 20px; border-bottom: 1px solid #eee; font-weight: 600; }
       .body { padding: 16px 20px; }
@@ -292,8 +292,9 @@ async function showEmbeddedSignModal(messageHex, address) {
     const style = document.createElement("style");
     style.textContent = `
       @keyframes iosw-fade-in { from { opacity: 0 } to { opacity: 1 } }
-      .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); }
+      .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 2147483647; }
       .panel { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(92vw, 520px); background: #fff; color: #111; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); animation: iosw-fade-in 120ms ease-out; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; overflow: hidden; }
+      .panel { z-index: 2147483647; }
       .header { padding: 16px 20px; border-bottom: 1px solid #eee; font-weight: 600; }
       .body { padding: 16px 20px; display:flex; flex-direction:column; gap: 10px; }
       .foot { padding: 16px 20px; display: flex; gap: 10px; justify-content: flex-end; }
@@ -377,8 +378,9 @@ async function showEmbeddedTypedDataModal(typedDataJSON, address) {
     const style = document.createElement("style");
     style.textContent = `
       @keyframes iosw-fade-in { from { opacity: 0 } to { opacity: 1 } }
-      .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); }
+      .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 2147483647; }
       .panel { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(92vw, 560px); background: #fff; color: #111; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); animation: iosw-fade-in 120ms ease-out; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; overflow: hidden; }
+      .panel { z-index: 2147483647; }
       .header { padding: 16px 20px; border-bottom: 1px solid #eee; font-weight: 600; }
       .body { padding: 16px 20px; display:flex; flex-direction:column; gap: 10px; }
       .foot { padding: 16px 20px; display: flex; gap: 10px; justify-content: flex-end; }
@@ -451,8 +453,9 @@ async function showEmbeddedTxModal(tx) {
     const style = document.createElement("style");
     style.textContent = `
       @keyframes iosw-fade-in { from { opacity: 0 } to { opacity: 1 } }
-      .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); }
+      .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 2147483647; }
       .panel { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(92vw, 560px); background: #fff; color: #111; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); animation: iosw-fade-in 120ms ease-out; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; overflow: hidden; }
+      .panel { z-index: 2147483647; }
       .header { padding: 16px 20px; border-bottom: 1px solid #eee; font-weight: 600; }
       .body { padding: 16px 20px; display:flex; flex-direction:column; gap: 10px; }
       .foot { padding: 16px 20px; display: flex; gap: 10px; justify-content: flex-end; }

@@ -67,6 +67,8 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             return handleAccounts()
         case "eth_chainId":
             return handleChainId()
+        case "eth_blockNumber":
+            return handleBlockNumber()
         case "personal_sign":
             let params = messageDict["params"] as? [Any]
             return handlePersonalSign(params: params)
@@ -114,6 +116,21 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
     private func handleChainId() -> [String: Any] {
         return ["result": Constants.Networks.getCurrentChainIdHex()]
+    }
+
+    private func handleBlockNumber() -> [String: Any] {
+        do {
+            let (rpcURL, _) = Constants.Networks.currentNetwork()
+            let web3 = Web3(rpcURL: rpcURL)
+            switch awaitPromise(web3.eth.blockNumber()) {
+            case .success(let num):
+                return ["result": num.hex()]
+            case .failure:
+                return ["error": "Failed to get block number"]
+            }
+        } catch {
+            return ["error": "Failed to get block number"]
+        }
     }
 
     private func handleRequestAccounts() -> [String: Any] {
