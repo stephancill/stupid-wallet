@@ -29,7 +29,7 @@
                 "<all_urls>"
             ],
             "js": [
-                "content.js"
+                "dist/content.iife.js"
             ],
             "run_at": "document_start"
         },

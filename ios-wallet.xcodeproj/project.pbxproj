@@ -48,7 +48,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		D4F389892E51FA9D0019E0C0 /* Exceptions for "safari" folder in "safari" target */ = {
+		D4B62EF22E5B0DF30062F943 /* Exceptions for "safari" folder in "safari" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -71,10 +71,11 @@
 		D4F389712E51FA9D0019E0C0 /* safari */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				D4F389892E51FA9D0019E0C0 /* Exceptions for "safari" folder in "safari" target */,
+				D4B62EF22E5B0DF30062F943 /* Exceptions for "safari" folder in "safari" target */,
 			);
 			explicitFolders = (
 				Resources/_locales,
+				Resources/dist,
 				Resources/images,
 			);
 			path = safari;
