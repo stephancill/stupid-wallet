@@ -9,23 +9,40 @@ Thank you for your interest in contributing! This project is a stupid wallet app
   - **UI**: `ios-wallet/ContentView.swift` implements a minimal wallet UI.
   - **Key management**: Uses Dawn Key Management to encrypt and store the private key using Secure Enclave + Keychain.
   - **RPC + balances**: Uses Web3.swift (+ PromiseKit) to query balances on multiple networks.
-  - **Shared storage**: Persists the selected address in an App Group `UserDefaults` for the Safari extension to read.
+  - **Shared storage**: Persists values in an App Group `UserDefaults` for the Safari extension to read:
+    - `walletAddress` (checksummed address)
+    - `chainId` (current chain as hex, e.g. `0x1`)
+    - `customChains` (dictionary keyed by hex chainId containing chain metadata and optional `rpcUrls`)
 
 - **Safari Web Extension** (`safari/`)
   - **Injected provider (main world)**: `safari/Resources/inject.js`
-    - EIP-1193 provider with basic methods: `eth_requestAccounts` and `eth_accounts`.
+    - EIP-1193 provider with supported methods:
+      - `eth_requestAccounts`, `eth_accounts`
+      - `eth_chainId`, `eth_blockNumber`
+      - `wallet_addEthereumChain`, `wallet_switchEthereumChain`
+      - `personal_sign`, `eth_signTypedData_v4`
+      - `eth_sendTransaction`
+    - Emits `accountsChanged` and `chainChanged` where applicable.
     - EIP-6963 provider discovery: announces via `eip6963:announceProvider` and responds to `eip6963:requestProvider`.
     - Communicates with the extension via `window.postMessage` to avoid restricted APIs in the main world.
   - **Content script (isolated world)**: built bundle at `safari/Resources/dist/content.iife.js`
     - Source lives in `web-ui/src/content.tsx` and is bundled via Vite.
     - Bridges between the injected provider and the background service worker.
-    - Presents in-page modals using React + shadcn/ui (Credenza) mounted within a Shadow DOM.
+    - Presents in-page modals using React + shadcn/ui (Credenza) mounted within a Shadow DOM for consented flows:
+      - Connect (`eth_requestAccounts`)
+      - Message signing (`personal_sign`)
+      - Typed data signing (`eth_signTypedData_v4`)
+      - Transaction sending (`eth_sendTransaction`)
   - **Background (service worker)**: `safari/Resources/background.js`
-    - Receives wallet requests and attempts to fetch accounts from native/handler.
-    - Currently returns the saved address via native handler or falls back to empty array.
+    - Receives wallet requests, routes to native handler, or responds immediately when trivial.
+    - Implements a pending → confirm handshake for consented flows (connect, sign, typed data, send tx).
+    - Supports routing for the methods listed above and falls back to safe defaults when native is unavailable.
   - **Native handler (Swift)**: `safari/SafariWebExtensionHandler.swift`
-    - Responds to extension requests by reading the persisted address from the shared App Group.
-    - Implements `eth_requestAccounts` and `eth_accounts` (mock consent flow; real consent TBD).
+    - Implements:
+      - Accounts and network: `eth_requestAccounts`, `eth_accounts`, `eth_chainId`, `eth_blockNumber`.
+      - Chains: `wallet_addEthereumChain` (persists metadata under `customChains`), `wallet_switchEthereumChain` (updates `chainId`).
+      - Signing: `personal_sign` (EIP-191), `eth_signTypedData_v4` (EIP-712) — uses Dawn Key Management to sign digests without exporting keys.
+      - Transactions: `eth_sendTransaction` — builds legacy or EIP-1559 transactions, signs, and broadcasts via Web3.swift.
 
 ### Data Flow
 
@@ -33,9 +50,10 @@ Thank you for your interest in contributing! This project is a stupid wallet app
 - **EIP‑6963**: Provider announces over window events; DApps can discover this provider without clobbering `window.ethereum`.
 - **Request path**:
   1. Injected provider posts a message to the window (`stupid-wallet-inject`).
-  2. Content script listens and forwards to background via `browser.runtime.sendMessage`.
-  3. Background queries native/handler (or shared storage) and returns the result to content script.
-  4. Content script posts the response back to the injected provider, which resolves the original request.
+  2. Content script relays to background via `browser.runtime.sendMessage`.
+  3. Background queries native/handler (or shared storage) and returns the result; for consented flows it first replies `{ pending: true }`.
+  4. On `{ pending: true }`, the content script displays a modal and then sends a `WALLET_CONFIRM` to background; background finalizes by calling native and returns `{ result }` or `{ error }`.
+  5. Content script posts the final response back to the injected provider, which resolves the original request.
 
 ### Code Layout
 
@@ -81,6 +99,7 @@ Thank you for your interest in contributing! This project is a stupid wallet app
 
   - In `ContentView.swift`: `appGroupId`.
   - In `SafariWebExtensionHandler.swift`: `appGroupId`.
+  - In `shared/Constants.swift`: `Constants.accessGroup` — set to your Keychain Access Group and make sure the same group is present in both `ios-wallet/ios-wallet.entitlements` and `safari/safari.entitlements` under Keychain Sharing.
 
 - **Web UI setup (Vite + Tailwind + shadcn):**
 
@@ -109,16 +128,17 @@ xcodebuild -scheme ios-wallet -configuration Debug -destination 'generic/platfor
   - Select the `ios-wallet` scheme.
   - Choose an iOS Simulator and Run.
   - To run the Safari extension, enable Safari Web Extensions in Settings (iOS Simulator) and activate the extension in Safari.
-  - If you change the web UI, run `bun run build` in `web-ui` to refresh `safari/Resources/dist/content.iife.js`, then reload the extension in Safari.
+  - The web UI is built automatically by an Xcode Run Script phase. If needed, you can still run `bun run build` manually.
 
 ### Adding Features
 
 - **EIP‑1193 methods**
 
   - Injected provider: add a `case` handler in `inject.js` → route via postMessage.
-  - Content script: no change unless adding new message types.
-  - Background: add a handler in `background.js` and forward to native if needed.
+  - Content script: if the method requires user consent, implement a modal in `web-ui/src/components/*` and wire the pending → confirm flow in `web-ui/src/content.tsx`.
+  - Background: add a handler in `background.js` and forward to native if needed; for consented flows, send `{ pending: true }` first and handle `WALLET_CONFIRM`.
   - Native handler: implement the method in `SafariWebExtensionHandler.swift` and return `{ result }` or `{ error }`.
+  - Update docs of supported methods below as needed.
 
 - **Balances / Networks**
 
@@ -139,7 +159,7 @@ xcodebuild -scheme ios-wallet -configuration Debug -destination 'generic/platfor
 
 - Do not inject privileged APIs into the page; use postMessage bridges.
 - Freeze provider detail objects when announcing via EIP-6963.
-- Only implement the minimum required provider surface (currently `eth_requestAccounts`, `eth_accounts`).
+- Supported today: `eth_requestAccounts`, `eth_accounts`, `eth_chainId`, `eth_blockNumber`, `wallet_addEthereumChain`, `wallet_switchEthereumChain`, `personal_sign`, `eth_signTypedData_v4`, `eth_sendTransaction`. Prefer keeping the surface minimal and consented.
 - Never log sensitive data (private keys, seeds, decrypted material).
 
 ### Style Guidelines
@@ -170,6 +190,7 @@ xcodebuild -scheme ios-wallet -configuration Debug -destination 'generic/platfor
 - If the provider doesn’t appear in a DApp: check the console logs in the page, content script, and background.
 - If modals render unstyled: make sure you rebuilt `web-ui` and that the Shadow DOM variables are injected (see `shadowHost.ts`).
 - If you see `ReferenceError: process` from third‑party code in the content script, the Vite config defines `process.env`/`global` shims; ensure you’re using the repo’s `web-ui/vite.config.ts`.
+- If Xcode shows script sandbox denials when building the web‑ui: either disable `ENABLE_USER_SCRIPT_SANDBOXING` for the `safari` target, or add proper Input/Output file lists to the Run Script phase.
 
 ### Roadmap
 
