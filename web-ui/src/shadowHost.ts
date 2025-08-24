@@ -1,13 +1,23 @@
 import React from "react";
 import { createRoot, Root } from "react-dom/client";
+// Inline Tailwind CSS into Shadow DOM (using a dedicated bundle to ensure all layers/imports resolve)
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+import shadowCss from "./shadow.css?inline";
 
 export type ShadowMount = {
   container: HTMLDivElement;
   cleanup: () => void;
   root: Root;
-  shadow: ShadowRoot;
+  shadow: ShadowRoot | HTMLElement;
   rootEl: HTMLDivElement;
+  portalEl: HTMLDivElement;
 };
+
+let currentPortalContainer: HTMLDivElement | null = null;
+export function getPortalContainer(): HTMLDivElement | null {
+  return currentPortalContainer;
+}
 
 export function createShadowMount(): ShadowMount {
   const container = document.createElement("div");
@@ -16,10 +26,25 @@ export function createShadowMount(): ShadowMount {
   container.style.inset = "0";
   container.style.zIndex = "2147483647";
 
-  const shadow = container.attachShadow({ mode: "closed" });
+  let shadow: ShadowRoot | HTMLElement;
+  try {
+    if (typeof (container as any).attachShadow === "function") {
+      shadow = (container as any).attachShadow({ mode: "open" });
+    } else {
+      shadow = container;
+    }
+  } catch (_) {
+    // Fallback for environments where Shadow DOM is restricted
+    shadow = container;
+  }
+
+  const tailwindStyle = document.createElement("style");
+  tailwindStyle.textContent = shadowCss as string;
 
   const style = document.createElement("style");
   style.textContent = `
+    :host { all: initial; }
+    *, *::before, *::after { box-sizing: border-box; }
     @keyframes iosw-fade-in { from { opacity: 0 } to { opacity: 1 } }
     .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 2147483647; }
     .panel {
@@ -43,10 +68,64 @@ export function createShadowMount(): ShadowMount {
     .kv { display:grid; grid-template-columns: 120px 1fr; gap:8px; }
   `;
 
-  const rootEl = document.createElement("div");
+  // Provide shadcn/tailwind CSS variables within the shadow root.
+  // Tailwind v4 defines tokens under :root / .dark in the page. Those do not cross into Shadow DOM,
+  // so we mirror them on :host here.
+  const vars = document.createElement("style");
+  vars.textContent = `
+    :host {
+      --radius: 0.625rem;
+      --background: oklch(1 0 0);
+      --foreground: oklch(0.145 0 0);
+      --card: oklch(1 0 0);
+      --card-foreground: oklch(0.145 0 0);
+      --popover: oklch(1 0 0);
+      --popover-foreground: oklch(0.145 0 0);
+      --primary: oklch(0.205 0 0);
+      --primary-foreground: oklch(0.985 0 0);
+      --secondary: oklch(0.97 0 0);
+      --secondary-foreground: oklch(0.205 0 0);
+      --muted: oklch(0.97 0 0);
+      --muted-foreground: oklch(0.556 0 0);
+      --accent: oklch(0.97 0 0);
+      --accent-foreground: oklch(0.205 0 0);
+      --destructive: oklch(0.577 0.245 27.325);
+      --border: oklch(0.922 0 0);
+      --input: oklch(0.922 0 0);
+      --ring: oklch(0.708 0 0);
+    }
+    :host(.dark) {
+      --background: oklch(0.145 0 0);
+      --foreground: oklch(0.985 0 0);
+      --card: oklch(0.205 0 0);
+      --card-foreground: oklch(0.985 0 0);
+      --popover: oklch(0.205 0 0);
+      --popover-foreground: oklch(0.985 0 0);
+      --primary: oklch(0.922 0 0);
+      --primary-foreground: oklch(0.205 0 0);
+      --secondary: oklch(0.269 0 0);
+      --secondary-foreground: oklch(0.985 0 0);
+      --muted: oklch(0.269 0 0);
+      --muted-foreground: oklch(0.708 0 0);
+      --accent: oklch(0.269 0 0);
+      --accent-foreground: oklch(0.985 0 0);
+      --destructive: oklch(0.704 0.191 22.216);
+      --border: oklch(1 0 0 / 10%);
+      --input: oklch(1 0 0 / 15%);
+      --ring: oklch(0.556 0 0);
+    }
+  `;
 
+  const rootEl = document.createElement("div");
+  // Tailwind base context so shadcn tokens/utilities apply within the shadow tree
+  rootEl.className = "font-sans text-foreground";
+  const portalEl = document.createElement("div");
+
+  shadow.appendChild(vars);
+  shadow.appendChild(tailwindStyle);
   shadow.appendChild(style);
   shadow.appendChild(rootEl);
+  shadow.appendChild(portalEl);
   document.documentElement.appendChild(container);
 
   const root = createRoot(rootEl);
@@ -56,7 +135,11 @@ export function createShadowMount(): ShadowMount {
       root.unmount();
     } catch {}
     container.remove();
+    if (currentPortalContainer === portalEl) {
+      currentPortalContainer = null;
+    }
   };
 
-  return { container, cleanup, root, shadow, rootEl };
+  currentPortalContainer = portalEl;
+  return { container, cleanup, root, shadow, rootEl, portalEl };
 }

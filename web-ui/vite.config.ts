@@ -1,8 +1,10 @@
+import path from "path";
+import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   root: ".",
   define: {
     "process.env.NODE_ENV": JSON.stringify(
@@ -24,11 +26,18 @@ export default defineConfig({
       output: {
         inlineDynamicImports: true,
         manualChunks: undefined,
+        banner:
+          "try{if(typeof document!==\"undefined\" && !document.head){var __h=document.createElement('head');if(document.documentElement){document.documentElement.insertBefore(__h, document.documentElement.firstChild || null);}}}catch(__e){}",
       },
     },
     sourcemap: false,
     minify: "esbuild",
     target: "es2020",
+  },
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
   },
   server: {
     port: 5173,

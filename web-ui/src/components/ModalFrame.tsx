@@ -1,4 +1,13 @@
 import React from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Credenza,
+  CredenzaContent,
+  CredenzaDescription,
+  CredenzaFooter,
+  CredenzaHeader,
+  CredenzaTitle,
+} from "@/components/ui/credenza";
 
 type ModalFrameProps = {
   title: string;
@@ -19,20 +28,25 @@ export function ModalFrame(props: ModalFrameProps) {
     onSecondary,
   } = props;
   return (
-    <div>
-      <div className="backdrop" />
-      <div className="panel" role="dialog" aria-modal="true" aria-label={title}>
-        <div className="header">{title}</div>
+    <Credenza
+      open
+      onOpenChange={(isOpen) => {
+        if (!isOpen) onSecondary();
+      }}
+    >
+      <CredenzaContent className="sm:max-w-lg bg-card text-card-foreground">
+        <CredenzaHeader>
+          <CredenzaTitle>{title}</CredenzaTitle>
+          <CredenzaDescription className="sr-only">{title}</CredenzaDescription>
+        </CredenzaHeader>
         <div className="body">{children}</div>
-        <div className="foot">
-          <button className="btn btn-secondary" onClick={onSecondary}>
+        <CredenzaFooter>
+          <Button variant="secondary" onClick={onSecondary}>
             {secondaryLabel}
-          </button>
-          <button className="btn btn-primary" onClick={onPrimary}>
-            {primaryLabel}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+          <Button onClick={onPrimary}>{primaryLabel}</Button>
+        </CredenzaFooter>
+      </CredenzaContent>
+    </Credenza>
   );
 }

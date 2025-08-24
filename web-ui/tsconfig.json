@@ -7,7 +7,11 @@
     "moduleResolution": "Bundler",
     "strict": true,
     "skipLibCheck": true,
-    "types": ["chrome", "firefox-webext-browser", "node"]
+    "types": ["chrome", "firefox-webext-browser", "node"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
   "include": ["src"]
 }

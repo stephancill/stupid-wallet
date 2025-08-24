@@ -16,9 +16,10 @@ Thank you for your interest in contributing! This project is a stupid wallet app
     - EIP-1193 provider with basic methods: `eth_requestAccounts` and `eth_accounts`.
     - EIP-6963 provider discovery: announces via `eip6963:announceProvider` and responds to `eip6963:requestProvider`.
     - Communicates with the extension via `window.postMessage` to avoid restricted APIs in the main world.
-  - **Content script (isolated world)**: `safari/Resources/content.js`
-    - Bridge between the injected provider and the background service worker.
-    - Listens for page messages and forwards them via `browser.runtime.sendMessage`.
+  - **Content script (isolated world)**: built bundle at `safari/Resources/dist/content.iife.js`
+    - Source lives in `web-ui/src/content.tsx` and is bundled via Vite.
+    - Bridges between the injected provider and the background service worker.
+    - Presents in-page modals using React + shadcn/ui (Credenza) mounted within a Shadow DOM.
   - **Background (service worker)**: `safari/Resources/background.js`
     - Receives wallet requests and attempts to fetch accounts from native/handler.
     - Currently returns the saved address via native handler or falls back to empty array.
@@ -44,11 +45,20 @@ Thank you for your interest in contributing! This project is a stupid wallet app
   - `ios-wallet/ios_walletApp.swift`: App entry point.
 
 - **Safari Extension**
+
   - `safari/SafariWebExtensionHandler.swift`: Native handler for web extension requests.
   - `safari/Resources/inject.js`: EIP-1193 provider + EIP-6963 discovery.
-  - `safari/Resources/content.js`: Bridge between page and background.
+  - `safari/Resources/dist/content.iife.js`: Built content script bundle (do not edit).
   - `safari/Resources/background.js`: Service worker handling wallet requests.
   - `safari/Resources/manifest.json`: MV3 manifest.
+
+- **Web UI (React/Vite)**
+  - `web-ui/src/content.tsx`: TypeScript content script entry (bridging + modal orchestration).
+  - `web-ui/src/shadowHost.ts`: Creates a Shadow DOM host, injects Tailwind, CSS variables and routes portals into the shadow root.
+  - `web-ui/src/components/ModalFrame.tsx`: Shared modal wrapper using shadcn/ui Credenza (Dialog/Drawer responsive).
+  - `web-ui/src/components/ui/*`: Generated shadcn/ui components (including `dialog`, `drawer`, `credenza`).
+  - `web-ui/src/index.css` and `web-ui/src/shadow.css`: Tailwind v4 layers and tokens (inlined into shadow root).
+  - Output directory is `safari/Resources/dist/` with file `content.iife.js`.
 
 ### Prerequisites
 
@@ -59,6 +69,7 @@ Thank you for your interest in contributing! This project is a stupid wallet app
   - PromiseKit
   - Dawn Key Management
   - BigInt
+- Bun (for web-ui tooling) — `curl -fsSL https://bun.sh/install | bash`
 
 ### Local Setup
 
@@ -67,8 +78,22 @@ Thank you for your interest in contributing! This project is a stupid wallet app
   - App Groups: create/use an App Group and set it in code (default: `group.co.za.stephancill.stupid-wallet`).
   - Keychain Sharing: required by Dawn Key Management.
 - **Update code constants** if you use a different App Group:
+
   - In `ContentView.swift`: `appGroupId`.
   - In `SafariWebExtensionHandler.swift`: `appGroupId`.
+
+- **Web UI setup (Vite + Tailwind + shadcn):**
+
+  ```bash
+  cd web-ui
+  bun install
+  # dev playground for components (optional)
+  bun run dev
+  # build the content script bundle to safari/Resources/dist/content.iife.js
+  bun run build
+  ```
+
+  The Xcode build picks up files under `safari/Resources/**`; rebuilding the web-ui updates the extension bundle.
 
 ### Build and Run
 
@@ -84,6 +109,7 @@ xcodebuild -scheme ios-wallet -configuration Debug -destination 'generic/platfor
   - Select the `ios-wallet` scheme.
   - Choose an iOS Simulator and Run.
   - To run the Safari extension, enable Safari Web Extensions in Settings (iOS Simulator) and activate the extension in Safari.
+  - If you change the web UI, run `bun run build` in `web-ui` to refresh `safari/Resources/dist/content.iife.js`, then reload the extension in Safari.
 
 ### Adding Features
 
@@ -100,8 +126,14 @@ xcodebuild -scheme ios-wallet -configuration Debug -destination 'generic/platfor
   - Keep UI responsive; prefer `Task` and async/await bridging for PromiseKit results.
 
 - **Key Management**
+
   - Use Dawn Wallet Key Management for any operations involving private key access.
   - Ensure any new signing flows request consent and never expose the raw private key to the page.
+
+- **Web UI / Modals**
+  - Modals are React components using shadcn/ui Credenza (responsive Dialog/Drawer) and render inside a Shadow DOM.
+  - Edit `web-ui/src/components/ModalFrame.tsx` and specific modal components; ensure to keep `onOpenChange` rejecting on dismiss.
+  - Shadow DOM styling is isolated; tokens are provided via CSS variables injected in `shadowHost.ts`.
 
 ### Security Considerations
 
@@ -136,6 +168,8 @@ xcodebuild -scheme ios-wallet -configuration Debug -destination 'generic/platfor
 - If simulator build fails due to provisioning: ensure you selected an iOS Simulator destination and not a device.
 - If balances don’t load: verify RPC endpoints and network connectivity.
 - If the provider doesn’t appear in a DApp: check the console logs in the page, content script, and background.
+- If modals render unstyled: make sure you rebuilt `web-ui` and that the Shadow DOM variables are injected (see `shadowHost.ts`).
+- If you see `ReferenceError: process` from third‑party code in the content script, the Vite config defines `process.env`/`global` shims; ensure you’re using the repo’s `web-ui/vite.config.ts`.
 
 ### Roadmap
 

@@ -21,7 +21,6 @@
       this.request = this.request.bind(this);
       this.on = this.on.bind(this);
       this.removeListener = this.removeListener.bind(this);
-      this.enable = this.enable.bind(this);
       this.send = this.send.bind(this);
       this.sendAsync = this.sendAsync.bind(this);
     }
@@ -576,14 +575,6 @@
       });
     }
 
-    // Legacy methods for backwards compatibility
-    enable() {
-      console.warn(
-        'ethereum.enable() is deprecated. Use ethereum.request({method: "eth_requestAccounts"}) instead.'
-      );
-      return this.request({ method: "eth_requestAccounts" });
-    }
-
     send(methodOrPayload, callbackOrParams) {
       console.warn(
         "ethereum.send() is deprecated. Use ethereum.request() instead."
@@ -601,9 +592,10 @@
         const callback = callbackOrParams;
 
         this.request({ method: payload.method, params: payload.params || [] })
-          .then((result) =>
-            callback(null, { id: payload.id, jsonrpc: "2.0", result })
-          )
+          .then((result) => {
+            console.log("send callback", result);
+            return callback(null, { id: payload.id, jsonrpc: "2.0", result });
+          })
           .catch((error) => callback(error, null));
       }
     }

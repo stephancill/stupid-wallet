@@ -174,6 +174,7 @@
 			buildPhases = (
 				D4F3896C2E51FA9D0019E0C0 /* Sources */,
 				D4F3896D2E51FA9D0019E0C0 /* Frameworks */,
+				D4B62EF32E5B54880062F943 /* ShellScript */,
 				D4F3896E2E51FA9D0019E0C0 /* Resources */,
 			);
 			buildRules = (
@@ -253,6 +254,27 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		D4B62EF32E5B54880062F943 /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\nexport PATH=\"$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\"\n\ncd \"$SRCROOT/web-ui\"\nbun install --no-progress\nbun run build\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		D4F3895A2E51FA740019E0C0 /* Sources */ = {
@@ -474,6 +496,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6JKMV57Y77;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = safari/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "stupid wallet";
@@ -505,6 +528,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6JKMV57Y77;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = safari/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "stupid wallet";

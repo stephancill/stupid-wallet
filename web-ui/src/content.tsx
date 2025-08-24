@@ -1,4 +1,14 @@
 import React from "react";
+// Ensure head exists early for libraries that inject <style> into document.head
+try {
+  if (typeof document !== "undefined" && !document.head) {
+    const h = document.createElement("head");
+    document.documentElement?.insertBefore(
+      h,
+      document.documentElement.firstChild || null
+    );
+  }
+} catch {}
 import { createShadowMount } from "./shadowHost";
 import { ConnectModal } from "./components/ConnectModal";
 import { SignMessageModal } from "./components/SignMessageModal";
