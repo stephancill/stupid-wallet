@@ -1,3 +1,4 @@
 build
 node_modules
 safari/Resources/dist
+.env*

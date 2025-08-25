@@ -9,6 +9,7 @@
 	<key>keychain-access-groups</key>
 	<array>
 		<string>$(AppIdentifierPrefix)co.za.stephancill.stupid-wallet</string>
+		<string>$(AppIdentifierPrefix)co.za.stephancill.stupid-wallet.safari</string>
 	</array>
 </dict>
 </plist>

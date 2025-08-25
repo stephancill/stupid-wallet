@@ -130,7 +130,38 @@ export function createShadowMount(): ShadowMount {
   shadow.appendChild(style);
   shadow.appendChild(rootEl);
   shadow.appendChild(portalEl);
-  document.documentElement.appendChild(container);
+  // Attach only to <body> to avoid altering <html> children which can break app frameworks
+  const attach = () => {
+    if (document.body && !container.isConnected) {
+      document.body.appendChild(container);
+    }
+  };
+
+  if (document.body) {
+    attach();
+  } else {
+    // Wait for body to exist (e.g., during early document load)
+    const observer = new MutationObserver(() => {
+      if (document.body) {
+        attach();
+        observer.disconnect();
+      }
+    });
+    try {
+      observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+      });
+    } catch {}
+    window.addEventListener(
+      "DOMContentLoaded",
+      () => {
+        attach();
+        observer.disconnect();
+      },
+      { once: true }
+    );
+  }
 
   const root = createRoot(rootEl);
 

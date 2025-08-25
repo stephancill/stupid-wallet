@@ -8,6 +8,7 @@
 import SwiftUI
 import UIKit
 import Security
+import LocalAuthentication
 import Web3
 import Web3PromiseKit
 import PromiseKit
@@ -35,9 +36,17 @@ final class WalletViewModel: ObservableObject {
     @Published var isSaving: Bool = false
     @Published var errorMessage: String?
     @Published var balances: [String: String] = [:] // network name -> formatted balance
+    @Published var biometryAvailable: Bool = false
 
     init() {
         loadPersistedAddress()
+        biometryAvailable = isBiometrySupported()
+        // Ensure ciphertext is available to the Safari extension on first run after updates
+        if hasWallet, !addressHex.isEmpty {
+            KeyManagement.syncCiphertextToSharedGroupIfNeeded(addressHex: addressHex)
+            // Preflight to surface auth prompt on app open
+            KeyManagement.preflightAuthentication(addressHex: addressHex)
+        }
         if hasWallet {
             Task { await refreshAllBalances() }
         }
@@ -58,6 +67,15 @@ final class WalletViewModel: ObservableObject {
             hasWallet = false
             addressHex = ""
         }
+    }
+
+    
+
+    func isBiometrySupported() -> Bool {
+        let ctx = LAContext()
+        var err: NSError?
+        let ok = ctx.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &err)
+        return ok
     }
 
     func savePrivateKey() {
@@ -91,7 +109,7 @@ final class WalletViewModel: ObservableObject {
                 if let b = UInt8(byteStr, radix: 16) { rawBytes.append(b) }
                 idx = next
             }
-            try KeyManagement.encryptPrivateKey(rawBytes: rawBytes)
+            try KeyManagement.encryptPrivateKey(rawBytes: rawBytes, requireBiometricsOnly: false)
 
             let addr = pk.address.hex(eip55: true)
             addressHex = addr
@@ -114,7 +132,7 @@ final class WalletViewModel: ObservableObject {
         defer { isSaving = false }
 
         do {
-            let wallet = try KeyManagement.createWallet()
+            let wallet = try KeyManagement.createWallet(requireBiometricsOnly: false)
             addressHex = try wallet.address.eip55Description
             hasWallet = true
             if let defaults = UserDefaults(suiteName: appGroupId) {
@@ -128,6 +146,8 @@ final class WalletViewModel: ObservableObject {
             errorMessage = error.localizedDescription
         }
     }
+
+    
 
     func clearWallet() {
         if let defaults = UserDefaults(suiteName: appGroupId) {
@@ -276,6 +296,8 @@ struct ContentView: View {
                 }
 
                 Divider()
+
+                
 
                 Button(role: .destructive, action: { vm.clearWallet() }) {
                     Text("Clear Wallet")

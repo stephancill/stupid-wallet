@@ -72,14 +72,24 @@ export function App({ container }: { container: HTMLDivElement }) {
   );
 
   React.useEffect(() => {
+    const UI_METHODS = new Set([
+      "eth_requestAccounts",
+      "personal_sign",
+      "eth_signTypedData_v4",
+      "eth_sendTransaction",
+    ]);
+
     const handleMessage = async (event: MessageEvent) => {
       if (event.source !== window) return;
       if (!event.data || event.data.source !== "stupid-wallet-inject") return;
 
+      const method: string = event.data.method;
+      if (!UI_METHODS.has(method)) return; // Non-UI handled by bridge
+
       try {
         const response = await browser.runtime.sendMessage({
           type: "WALLET_REQUEST",
-          method: event.data.method,
+          method,
           params: event.data.params,
           requestId: event.data.requestId,
         });
@@ -98,7 +108,7 @@ export function App({ container }: { container: HTMLDivElement }) {
         if (
           response &&
           response.pending === true &&
-          event.data.method === "eth_requestAccounts"
+          method === "eth_requestAccounts"
         ) {
           setModal({
             type: "connect",
@@ -112,7 +122,7 @@ export function App({ container }: { container: HTMLDivElement }) {
         if (
           response &&
           response.pending === true &&
-          event.data.method === "personal_sign"
+          method === "personal_sign"
         ) {
           const [messageHex, address] = normalizePersonalSignParams(
             event.data.params
@@ -129,7 +139,7 @@ export function App({ container }: { container: HTMLDivElement }) {
         if (
           response &&
           response.pending === true &&
-          event.data.method === "eth_signTypedData_v4"
+          method === "eth_signTypedData_v4"
         ) {
           const [address, typedDataJSON] = normalizeSignTypedDataV4Params(
             event.data.params
@@ -146,7 +156,7 @@ export function App({ container }: { container: HTMLDivElement }) {
         if (
           response &&
           response.pending === true &&
-          event.data.method === "eth_sendTransaction"
+          method === "eth_sendTransaction"
         ) {
           const tx = (event.data.params && event.data.params[0]) || {};
           setModal({
@@ -159,7 +169,7 @@ export function App({ container }: { container: HTMLDivElement }) {
           return;
         }
 
-        // Not pending -> return immediately
+        // Non-pending response (edge) -> just forward
         post(response);
       } catch (error: any) {
         window.postMessage(
@@ -173,29 +183,8 @@ export function App({ container }: { container: HTMLDivElement }) {
       }
     };
 
-    const handleRuntimeMessage = (message: any) => {
-      if (message && message.type === "WALLET_RESPONSE" && message.requestId) {
-        window.postMessage(
-          {
-            source: "stupid-wallet-content",
-            requestId: message.requestId,
-            response: message.response,
-          },
-          "*"
-        );
-      }
-    };
-
     window.addEventListener("message", handleMessage);
-    browser.runtime.onMessage.addListener(handleRuntimeMessage);
-    window.postMessage({ source: "stupid-wallet-content", type: "ready" }, "*");
-
-    return () => {
-      window.removeEventListener("message", handleMessage);
-      try {
-        browser.runtime.onMessage.removeListener(handleRuntimeMessage);
-      } catch {}
-    };
+    return () => window.removeEventListener("message", handleMessage);
   }, [normalizePersonalSignParams, normalizeSignTypedDataV4Params]);
 
   React.useEffect(() => {

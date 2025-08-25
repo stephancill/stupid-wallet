@@ -1,8 +1,36 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
-import { createPublicClient, formatEther, hexToBigInt, http } from "viem";
+import { useMemo, useState } from "react";
+import {
+  createPublicClient,
+  decodeFunctionData,
+  formatEther,
+  hexToBigInt,
+  hexToNumber,
+  http,
+  isHex,
+} from "viem";
 import * as chains from "viem/chains";
-import { ModalFrame } from "./ModalFrame";
+import { whatsabi } from "@shazow/whatsabi";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { ScrollBox } from "@/components/ui/scroll-box";
+import { Loader2 } from "lucide-react";
+import {
+  Credenza,
+  CredenzaContent,
+  CredenzaDescription,
+  CredenzaFooter,
+  CredenzaHeader,
+  CredenzaTitle,
+} from "@/components/ui/credenza";
+
+function stringifyWithBigInt(value: unknown) {
+  return JSON.stringify(
+    value,
+    (_, v) => (typeof v === "bigint" ? v.toString() : v),
+    2
+  );
+}
 
 type SendTxModalProps = {
   host: string;
@@ -17,28 +45,78 @@ export function SendTxModal({
   onApprove,
   onReject,
 }: SendTxModalProps) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const to = useMemo(() => tx.to || "(contract creation)", [tx]);
   const from = useMemo(() => tx.from || "", [tx]);
   const rawValue = useMemo(() => tx.value ?? "0x0", [tx]);
   const valueEth = useMemo(() => {
-    try {
-      let wei: bigint = 0n;
-      if (typeof rawValue === "string") {
-        if (rawValue.startsWith("0x")) {
-          wei = hexToBigInt(rawValue as `0x${string}`);
-        } else {
-          wei = BigInt(rawValue || "0");
-        }
-      } else if (typeof rawValue === "bigint") {
-        wei = rawValue;
-      } else if (typeof rawValue === "number") {
-        wei = BigInt(rawValue);
-      }
-      return formatEther(wei);
-    } catch {
-      return "0";
-    }
+    return isHex(rawValue) ? formatEther(hexToBigInt(rawValue)) : "0";
   }, [rawValue]);
+
+  const {
+    data: chainId,
+    isLoading: isChainIdLoading,
+    isError: isChainIdError,
+  } = useQuery({
+    queryKey: ["chainId"],
+    queryFn: async () => {
+      const { result: chainIdHex }: { result: `0x${string}` } =
+        await browser.runtime.sendMessage({
+          type: "WALLET_REQUEST",
+          method: "eth_chainId",
+          params: [],
+        });
+
+      return hexToNumber(chainIdHex);
+    },
+    throwOnError: true,
+  });
+
+  const chain = useMemo(() => {
+    return Object.values(chains).find(
+      (chain) => chain.id === chainId
+    ) as chains.Chain;
+  }, [chainId]);
+
+  const {
+    data: abiLoadResult,
+    isLoading: isAbiLoadLoading,
+    isError: isAbiLoadError,
+  } = useQuery({
+    queryKey: ["contractAbi", to?.toLowerCase?.() || to, chain?.id],
+    queryFn: async () => {
+      try {
+        const client = createPublicClient({
+          chain: chain,
+          transport: http(),
+        });
+
+        const etherscanBaseUrl = Object.values(
+          chain?.blockExplorers || {}
+        ).find((item) => item.name.includes("scan"))?.apiUrl;
+
+        if (!etherscanBaseUrl) {
+          throw new Error("Block explorer base URL not found");
+        }
+
+        console.log("etherscanBaseUrl", etherscanBaseUrl);
+
+        const result = await whatsabi.autoload(to, {
+          provider: client,
+          ...whatsabi.loaders.defaultsWithEnv({
+            SOURCIFY_CHAIN_ID: chain?.id.toString(),
+            ETHERSCAN_API_KEY: "253URMD24CWBW4CNU19BC1T8YMY145DJ9S",
+            ETHERSCAN_BASE_URL: etherscanBaseUrl,
+          }),
+        });
+
+        return result;
+      } catch (_) {
+        return null;
+      }
+    },
+    enabled: Boolean(chain && to),
+  });
 
   const dataHex: string = useMemo(() => {
     return (
@@ -48,29 +126,158 @@ export function SendTxModal({
     );
   }, [tx]);
 
-  const { data: decoded, isLoading } = useQuery({
-    queryKey: ["decodedTx", to?.toLowerCase?.() || to, dataHex],
+  const decoded = useMemo(() => {
+    if (!dataHex || dataHex === "0x") return null;
+    if (!abiLoadResult) return null;
+    return decodeFunctionData({
+      abi: abiLoadResult.abi,
+      data: dataHex as `0x${string}`,
+    });
+  }, [abiLoadResult, dataHex]);
+
+  const functionItem = useMemo(() => {
+    try {
+      if (!decoded || !abiLoadResult?.abi) return null;
+      const abi = (abiLoadResult.abi || []) as Array<any>;
+      const candidates = abi.filter(
+        (item) =>
+          item?.type === "function" && item?.name === decoded.functionName
+      );
+      if (candidates.length === 0) return null;
+      const exact = candidates.find(
+        (item) => (item?.inputs?.length || 0) === (decoded.args?.length || 0)
+      );
+      return exact || candidates[0];
+    } catch {
+      return null;
+    }
+  }, [decoded, abiLoadResult]);
+
+  const addressArgItems = useMemo(() => {
+    try {
+      if (!functionItem?.inputs || !decoded?.args)
+        return [] as Array<{ key: string; address: string }>;
+      const items: Array<{ key: string; address: string }> = [];
+      functionItem.inputs.forEach((inp: any, i: number) => {
+        const type = inp?.type as string | undefined;
+        const argVal = (decoded as any)?.args?.[i];
+        if (!type) return;
+        if (type === "address") {
+          if (typeof argVal === "string" && argVal.startsWith("0x")) {
+            items.push({ key: `${i}`, address: argVal.toLowerCase() });
+          }
+        } else if (type === "address[]" && Array.isArray(argVal)) {
+          argVal.forEach((addr: any, j: number) => {
+            if (typeof addr === "string" && addr.startsWith("0x")) {
+              items.push({ key: `${i}.${j}`, address: addr.toLowerCase() });
+            }
+          });
+        }
+      });
+      return items;
+    } catch {
+      return [] as Array<{ key: string; address: string }>;
+    }
+  }, [functionItem, decoded]);
+
+  const uniqueArgAddresses = useMemo(() => {
+    return Array.from(new Set(addressArgItems.map((i) => i.address)));
+  }, [addressArgItems]);
+
+  const { data: argEnsMap } = useQuery({
+    queryKey: ["ensArgNames", uniqueArgAddresses],
     queryFn: async () => {
-      if (!dataHex || dataHex === "0x") return null;
       try {
-        const res = await browser.runtime.sendMessage({
-          type: "DECODE_TX_DATA",
-          to,
-          data: dataHex,
+        const mainnetClient = createPublicClient({
+          chain: chains.mainnet,
+          transport: http(),
         });
-        return res?.decoded ?? res ?? null;
-      } catch (_) {
-        return null;
+        const entries = await Promise.all(
+          uniqueArgAddresses.map(async (addr) => {
+            try {
+              const name = await mainnetClient.getEnsName({
+                address: addr as `0x${string}`,
+              });
+              return [addr, name] as const;
+            } catch {
+              return [addr, null] as const;
+            }
+          })
+        );
+        const map: Record<string, string | null> = {};
+        for (const [addr, name] of entries) map[addr] = name;
+        return map;
+      } catch {
+        return {} as Record<string, string | null>;
       }
     },
+    enabled: uniqueArgAddresses.length > 0,
   });
 
-  const decodedDisplay = useMemo(() => {
-    if (decoded == null) return dataHex;
-    return decoded;
-  }, [decoded, dataHex]);
+  const renderArgValue = (value: any, type?: string) => {
+    if (
+      type === "address" &&
+      typeof value === "string" &&
+      value.startsWith("0x")
+    ) {
+      const name = argEnsMap?.[value.toLowerCase()] || null;
+      if (name) {
+        return (
+          <div>
+            <div className="text-foreground">{name}</div>
+            <div className="font-mono text-muted-foreground break-all">
+              {value}
+            </div>
+          </div>
+        );
+      }
+      return <span className="font-mono break-all">{value}</span>;
+    }
+    if (type === "address[]" && Array.isArray(value)) {
+      return (
+        <div className="space-y-1">
+          {value.map((addr: any, j: number) => {
+            if (typeof addr === "string" && addr.startsWith("0x")) {
+              const name = argEnsMap?.[addr.toLowerCase()] || null;
+              return (
+                <div key={j}>
+                  {name ? (
+                    <div>
+                      <div className="text-foreground">{name}</div>
+                      <div className="font-mono text-muted-foreground break-all">
+                        {addr}
+                      </div>
+                    </div>
+                  ) : (
+                    <span className="font-mono break-all">{addr}</span>
+                  )}
+                </div>
+              );
+            }
+            return <span key={j}>{String(addr)}</span>;
+          })}
+        </div>
+      );
+    }
+    if (typeof value === "bigint") return value.toString();
+    if (typeof value === "string") {
+      return value.startsWith("0x") ? (
+        <span className="font-mono break-all">{value}</span>
+      ) : (
+        <span>{value}</span>
+      );
+    }
+    if (Array.isArray(value) || (value && typeof value === "object")) {
+      return (
+        <pre className="whitespace-pre-wrap break-words text-muted-foreground">
+          {stringifyWithBigInt(value)}
+        </pre>
+      );
+    }
+    return <span>{String(value)}</span>;
+  };
 
-  const { data: names } = useQuery({
+  const { data: names, isLoading: isNamesLoading } = useQuery({
     queryKey: [
       "ensNames",
       (typeof to === "string" && to.toLowerCase()) || to,
@@ -78,22 +285,8 @@ export function SendTxModal({
     ],
     queryFn: async () => {
       try {
-        const chainIdHex: string = await browser.runtime.sendMessage({
-          type: "WALLET_REQUEST",
-          method: "eth_chainId",
-          params: [],
-        });
-        const id = (() => {
-          try {
-            return Number(chainIdHex);
-          } catch {
-            return 1;
-          }
-        })();
-        const chain = Object.values(chains).find((chain) => chain.id === id);
-
-        const client = createPublicClient({
-          chain: chain,
+        const mainnetClient = createPublicClient({
+          chain: chains.mainnet,
           transport: http(),
         });
 
@@ -101,7 +294,9 @@ export function SendTxModal({
           try {
             if (!addr || typeof addr !== "string") return null;
             if (!addr.startsWith("0x")) return null;
-            return await client.getEnsName({ address: addr as `0x${string}` });
+            return await mainnetClient.getEnsName({
+              address: addr as `0x${string}`,
+            });
           } catch {
             return null;
           }
@@ -111,53 +306,167 @@ export function SendTxModal({
           safeGetEns(to),
           safeGetEns(from),
         ]);
-        return { chainIdHex, toName, fromName } as const;
+        return { toName, fromName } as const;
       } catch {
-        return { chainIdHex: "0x1", toName: null, fromName: null } as const;
+        return { toName: null, fromName: null } as const;
       }
     },
   });
 
-  return (
-    <ModalFrame
-      title="Send Transaction"
-      primaryLabel="Send"
-      secondaryLabel="Reject"
-      onPrimary={onApprove}
-      onSecondary={onReject}
-    >
-      <div className="space-y-5">
-        <div className="grid grid-cols-[90px_1fr] items-start gap-x-3 gap-y-2">
-          <div className="text-sm text-muted-foreground">Site</div>
-          <div className="text-sm break-all">
-            <div className="font-medium text-foreground">{host}</div>
-          </div>
-          <div className="text-sm text-muted-foreground">To</div>
-          <div className="text-sm break-all">
-            {names?.toName ? (
-              <div className="font-medium text-foreground">{names.toName}</div>
-            ) : null}
-            <div className="font-mono text-muted-foreground">{to}</div>
-          </div>
-          <div className="text-sm text-muted-foreground">Value</div>
-          <div className="text-sm font-mono">{valueEth} ETH</div>
-        </div>
+  const isAggregateLoading =
+    isChainIdLoading || isAbiLoadLoading || isNamesLoading;
+  const controlsDisabled = isSubmitting || isAggregateLoading;
 
-        <div>
-          <div className="text-sm font-medium mb-2">Decoded data</div>
-          <div className="rounded-md border bg-muted/30 p-3 text-xs font-mono text-muted-foreground">
-            {isLoading ? (
-              <div className="h-16 w-full animate-pulse rounded-md bg-muted" />
-            ) : (
-              <pre className="whitespace-pre-wrap break-words text-foreground">
-                {typeof decodedDisplay === "string"
-                  ? decodedDisplay
-                  : JSON.stringify(decodedDisplay, null, 2)}
-              </pre>
-            )}
+  const handlePrimaryClick = async () => {
+    try {
+      setIsSubmitting(true);
+      await onApprove();
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Credenza
+      open
+      onOpenChange={(isOpen) => {
+        if (!isOpen && !isSubmitting) onReject();
+      }}
+    >
+      <CredenzaContent className="sm:max-w-lg bg-card text-card-foreground">
+        <CredenzaHeader>
+          <CredenzaTitle>Send Transaction</CredenzaTitle>
+          <CredenzaDescription className="sr-only">
+            Send Transaction
+          </CredenzaDescription>
+        </CredenzaHeader>
+        <div className="body" aria-busy={isAggregateLoading}>
+          <div className="space-y-5">
+            <div className="grid grid-cols-[90px_1fr] items-start gap-x-3 gap-y-2">
+              <div className="text-sm text-muted-foreground">Site</div>
+              <div className="text-sm break-all">
+                <div className="font-medium text-foreground">{host}</div>
+              </div>
+              <div className="text-sm text-muted-foreground">To</div>
+              <div className="text-sm break-all">
+                {names?.toName ? (
+                  <div className="font-medium text-foreground">
+                    {names.toName}
+                  </div>
+                ) : isNamesLoading ? (
+                  <Skeleton className="h-3 w-24" />
+                ) : null}
+                <div className="font-mono text-muted-foreground">{to}</div>
+              </div>
+              {isAbiLoadLoading ? (
+                <>
+                  <div className="text-sm text-muted-foreground">Contract</div>
+                  <div className="text-sm break-all">
+                    <Skeleton className="h-3 w-24" />
+                  </div>
+                </>
+              ) : abiLoadResult?.contractResult?.name ? (
+                <>
+                  <div className="text-sm text-muted-foreground">Contract</div>
+                  <div className="text-sm break-all">
+                    <div className="font-medium text-foreground">
+                      {abiLoadResult.contractResult.name}
+                    </div>
+                  </div>
+                </>
+              ) : null}
+              <div className="text-sm text-muted-foreground">Value</div>
+              <div className="text-sm font-mono">{valueEth} ETH</div>
+            </div>
+
+            <div>
+              <div className="text-sm font-medium mb-2">Data</div>
+              <ScrollBox>
+                {isAbiLoadLoading ? (
+                  <Skeleton className="h-16 w-full" />
+                ) : decoded ? (
+                  <div className="space-y-2">
+                    <div className="text-sm">
+                      <span className="font-medium text-foreground">
+                        {decoded.functionName}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {"("}
+                        {(functionItem?.inputs || [])
+                          .map((inp: any, i: number) =>
+                            [
+                              inp?.type || "unknown",
+                              inp?.name || `arg${i}`,
+                            ].join(" ")
+                          )
+                          .join(", ")}
+                        {")"}
+                      </span>
+                    </div>
+                    {(functionItem?.inputs?.length || 0) > 0 ? (
+                      <div className="divide-y divide-border rounded-md border">
+                        {(decoded.args || []).map((arg: any, i: number) => {
+                          const input = functionItem?.inputs?.[i] || {};
+                          const label = input?.name || `arg${i}`;
+                          const type = input?.type || "unknown";
+                          return (
+                            <div
+                              key={i}
+                              className="grid grid-cols-[140px_1fr] items-start gap-2 p-2"
+                            >
+                              <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                                {label}
+                                <span className="ml-1 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+                                  {type}
+                                </span>
+                              </div>
+                              <div className="text-foreground break-words">
+                                {renderArgValue(arg, type)}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <pre className="whitespace-pre-wrap break-words font-mono text-muted-foreground">
+                        {stringifyWithBigInt(decoded)}
+                      </pre>
+                    )}
+                  </div>
+                ) : (
+                  <pre className="whitespace-pre-wrap break-words font-mono text-muted-foreground">
+                    {dataHex}
+                  </pre>
+                )}
+              </ScrollBox>
+            </div>
           </div>
         </div>
-      </div>
-    </ModalFrame>
+        <CredenzaFooter>
+          <div className="flex w-full justify-end gap-2">
+            <Button
+              variant="secondary"
+              onClick={onReject}
+              disabled={controlsDisabled}
+            >
+              Reject
+            </Button>
+            <Button
+              onClick={handlePrimaryClick}
+              disabled={controlsDisabled}
+              aria-busy={controlsDisabled}
+            >
+              {controlsDisabled ? (
+                <span className="inline-flex items-center">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                </span>
+              ) : (
+                "Send"
+              )}
+            </Button>
+          </div>
+        </CredenzaFooter>
+      </CredenzaContent>
+    </Credenza>
   );
 }
