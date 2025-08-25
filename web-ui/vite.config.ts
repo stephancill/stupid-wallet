@@ -17,7 +17,7 @@ export default defineConfig({
     outDir: "../safari/Resources/dist",
     emptyOutDir: false,
     lib: {
-      entry: "src/content.tsx",
+      entry: "src/main.tsx",
       name: "IosWalletContent",
       formats: ["iife"],
       fileName: () => "content.iife.js",

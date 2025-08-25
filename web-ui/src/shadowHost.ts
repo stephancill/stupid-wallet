@@ -25,6 +25,8 @@ export function createShadowMount(): ShadowMount {
   container.style.position = "fixed";
   container.style.inset = "0";
   container.style.zIndex = "2147483647";
+  // Allow host page to remain interactive when no modal is shown
+  container.style.pointerEvents = "none";
 
   let shadow: ShadowRoot | HTMLElement;
   try {
@@ -119,6 +121,8 @@ export function createShadowMount(): ShadowMount {
   const rootEl = document.createElement("div");
   // Tailwind base context so shadcn tokens/utilities apply within the shadow tree
   rootEl.className = "font-sans text-foreground";
+  // Enable interactions for content rendered inside the shadow root
+  rootEl.style.pointerEvents = "auto";
   const portalEl = document.createElement("div");
 
   shadow.appendChild(vars);
