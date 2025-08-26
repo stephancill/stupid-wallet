@@ -1,4 +1,18 @@
+import { Button } from "@/components/ui/button";
+import Address from "@/components/Address";
+import {
+  Credenza,
+  CredenzaBody,
+  CredenzaContent,
+  CredenzaDescription,
+  CredenzaFooter,
+  CredenzaHeader,
+  CredenzaTitle,
+} from "@/components/ui/credenza";
+import { Skeleton } from "@/components/ui/skeleton";
+import { whatsabi } from "@shazow/whatsabi";
 import { useQuery } from "@tanstack/react-query";
+import { Loader2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
   createPublicClient,
@@ -10,19 +24,6 @@ import {
   isHex,
 } from "viem";
 import * as chains from "viem/chains";
-import { whatsabi } from "@shazow/whatsabi";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
-import { ScrollBox } from "@/components/ui/scroll-box";
-import { Loader2 } from "lucide-react";
-import {
-  Credenza,
-  CredenzaContent,
-  CredenzaDescription,
-  CredenzaFooter,
-  CredenzaHeader,
-  CredenzaTitle,
-} from "@/components/ui/credenza";
 
 function stringifyWithBigInt(value: unknown) {
   return JSON.stringify(
@@ -99,13 +100,11 @@ export function SendTxModal({
           throw new Error("Block explorer base URL not found");
         }
 
-        console.log("etherscanBaseUrl", etherscanBaseUrl);
-
         const result = await whatsabi.autoload(to, {
           provider: client,
           ...whatsabi.loaders.defaultsWithEnv({
             SOURCIFY_CHAIN_ID: chain?.id.toString(),
-            ETHERSCAN_API_KEY: "253URMD24CWBW4CNU19BC1T8YMY145DJ9S",
+            ETHERSCAN_API_KEY: process.env.ETHERSCAN_API_KEY,
             ETHERSCAN_BASE_URL: etherscanBaseUrl,
           }),
         });
@@ -214,6 +213,21 @@ export function SendTxModal({
     enabled: uniqueArgAddresses.length > 0,
   });
 
+  const renderAddressLink = (
+    address: string,
+    className?: string,
+    ens?: string | null
+  ) => {
+    return (
+      <Address
+        address={address}
+        className={className}
+        mono
+        withEnsNameAbove={ens || undefined}
+      />
+    );
+  };
+
   const renderArgValue = (value: any, type?: string) => {
     if (
       type === "address" &&
@@ -221,17 +235,7 @@ export function SendTxModal({
       value.startsWith("0x")
     ) {
       const name = argEnsMap?.[value.toLowerCase()] || null;
-      if (name) {
-        return (
-          <div>
-            <div className="text-foreground">{name}</div>
-            <div className="font-mono text-muted-foreground break-all">
-              {value}
-            </div>
-          </div>
-        );
-      }
-      return <span className="font-mono break-all">{value}</span>;
+      return renderAddressLink(value, "font-mono break-all", name);
     }
     if (type === "address[]" && Array.isArray(value)) {
       return (
@@ -241,16 +245,7 @@ export function SendTxModal({
               const name = argEnsMap?.[addr.toLowerCase()] || null;
               return (
                 <div key={j}>
-                  {name ? (
-                    <div>
-                      <div className="text-foreground">{name}</div>
-                      <div className="font-mono text-muted-foreground break-all">
-                        {addr}
-                      </div>
-                    </div>
-                  ) : (
-                    <span className="font-mono break-all">{addr}</span>
-                  )}
+                  {renderAddressLink(addr, "font-mono break-all", name)}
                 </div>
               );
             }
@@ -269,7 +264,7 @@ export function SendTxModal({
     }
     if (Array.isArray(value) || (value && typeof value === "object")) {
       return (
-        <pre className="whitespace-pre-wrap break-words text-muted-foreground">
+        <pre className="whitespace-pre-wrap break-words">
           {stringifyWithBigInt(value)}
         </pre>
       );
@@ -333,57 +328,71 @@ export function SendTxModal({
         if (!isOpen && !isSubmitting) onReject();
       }}
     >
-      <CredenzaContent className="sm:max-w-lg bg-card text-card-foreground">
+      <CredenzaContent className="sm:max-w-lg bg-card text-card-foreground max-h-[85vh] flex flex-col overflow-hidden">
         <CredenzaHeader>
           <CredenzaTitle>Send Transaction</CredenzaTitle>
           <CredenzaDescription className="sr-only">
             Send Transaction
           </CredenzaDescription>
         </CredenzaHeader>
-        <div className="body" aria-busy={isAggregateLoading}>
-          <div className="space-y-5">
-            <div className="grid grid-cols-[90px_1fr] items-start gap-x-3 gap-y-2">
-              <div className="text-sm text-muted-foreground">Site</div>
-              <div className="text-sm break-all">
-                <div className="font-medium text-foreground">{host}</div>
-              </div>
-              <div className="text-sm text-muted-foreground">To</div>
-              <div className="text-sm break-all">
-                {names?.toName ? (
-                  <div className="font-medium text-foreground">
-                    {names.toName}
-                  </div>
-                ) : isNamesLoading ? (
-                  <Skeleton className="h-3 w-24" />
-                ) : null}
-                <div className="font-mono text-muted-foreground">{to}</div>
-              </div>
-              {isAbiLoadLoading ? (
-                <>
-                  <div className="text-sm text-muted-foreground">Contract</div>
-                  <div className="text-sm break-all">
-                    <Skeleton className="h-3 w-24" />
-                  </div>
-                </>
-              ) : abiLoadResult?.contractResult?.name ? (
-                <>
-                  <div className="text-sm text-muted-foreground">Contract</div>
-                  <div className="text-sm break-all">
+        <CredenzaBody className="flex-1 overflow-y-auto min-h-0">
+          <div className="px-2 pb-2" aria-busy={isAggregateLoading}>
+            <div className="space-y-5">
+              <div className="grid grid-cols-[90px_1fr] items-start gap-x-3 gap-y-2">
+                <div className="text-sm text-muted-foreground">Site</div>
+                <div className="text-sm break-all">
+                  <div className="font-medium text-foreground">{host}</div>
+                </div>
+                <div className="text-sm text-muted-foreground">To</div>
+                <div className="text-sm break-all">
+                  {names?.toName ? (
                     <div className="font-medium text-foreground">
-                      {abiLoadResult.contractResult.name}
+                      {names.toName}
                     </div>
+                  ) : isNamesLoading ? (
+                    <Skeleton className="h-3 w-24" />
+                  ) : null}
+                  <div className="font-mono text-muted-foreground">
+                    {typeof to === "string" && to.startsWith("0x") ? (
+                      <Address
+                        address={to}
+                        mono
+                        withEnsNameAbove={names?.toName || undefined}
+                      />
+                    ) : (
+                      to
+                    )}
                   </div>
-                </>
-              ) : null}
-              <div className="text-sm text-muted-foreground">Value</div>
-              <div className="text-sm font-mono">{valueEth} ETH</div>
-            </div>
-
-            <div>
-              <div className="text-sm font-medium mb-2">Data</div>
-              <ScrollBox>
+                </div>
                 {isAbiLoadLoading ? (
-                  <Skeleton className="h-16 w-full" />
+                  <>
+                    <div className="text-sm text-muted-foreground">
+                      Contract
+                    </div>
+                    <div className="text-sm break-all">
+                      <Skeleton className="h-3 w-24" />
+                    </div>
+                  </>
+                ) : abiLoadResult?.contractResult?.name ? (
+                  <>
+                    <div className="text-sm text-muted-foreground">
+                      Contract
+                    </div>
+                    <div className="text-sm break-all">
+                      <div className="font-medium text-foreground">
+                        {abiLoadResult.contractResult.name}
+                      </div>
+                    </div>
+                  </>
+                ) : null}
+                <div className="text-sm text-muted-foreground">Value</div>
+                <div className="text-sm font-mono">{valueEth} ETH</div>
+              </div>
+
+              <div>
+                <div className="text-sm font-medium mb-2">Data</div>
+                {isAbiLoadLoading ? (
+                  <Skeleton className="h-2 w-full" />
                 ) : decoded ? (
                   <div className="space-y-2">
                     <div className="text-sm">
@@ -403,45 +412,63 @@ export function SendTxModal({
                         {")"}
                       </span>
                     </div>
-                    {(functionItem?.inputs?.length || 0) > 0 ? (
-                      <div className="divide-y divide-border rounded-md border">
-                        {(decoded.args || []).map((arg: any, i: number) => {
-                          const input = functionItem?.inputs?.[i] || {};
-                          const label = input?.name || `arg${i}`;
-                          const type = input?.type || "unknown";
-                          return (
-                            <div
-                              key={i}
-                              className="grid grid-cols-[140px_1fr] items-start gap-2 p-2"
-                            >
-                              <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                                {label}
-                                <span className="ml-1 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
-                                  {type}
-                                </span>
+                  </div>
+                ) : null}
+                {isAbiLoadLoading ? (
+                  <Skeleton className="h-16 w-full" />
+                ) : decoded ? (
+                  <div
+                    className="h-[20vh] w-full overflow-y-auto overflow-x-auto"
+                    style={{
+                      WebkitOverflowScrolling: "touch",
+                      touchAction: "auto",
+                      overscrollBehavior: "contain",
+                    }}
+                    data-vaul-no-drag
+                    onTouchStartCapture={(e) => e.stopPropagation()}
+                    onTouchMoveCapture={(e) => e.stopPropagation()}
+                    onPointerDownCapture={(e) => e.stopPropagation()}
+                    onPointerMoveCapture={(e) => e.stopPropagation()}
+                  >
+                    <div className="space-y-2">
+                      {(functionItem?.inputs?.length || 0) > 0 ? (
+                        <div className="divide-y divide-border rounded-md border">
+                          {(decoded.args || []).map((arg: any, i: number) => {
+                            const input =
+                              (functionItem?.inputs as any)?.[i] || {};
+                            const label = input?.name || `arg${i}`;
+                            const type = input?.type || "unknown";
+                            return (
+                              <div key={i} className="p-2">
+                                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                                  {label}
+                                  <span className="ml-1 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+                                    {type}
+                                  </span>
+                                </div>
+                                <div className="mt-1 text-foreground break-words">
+                                  {renderArgValue(arg, type)}
+                                </div>
                               </div>
-                              <div className="text-foreground break-words">
-                                {renderArgValue(arg, type)}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <pre className="whitespace-pre-wrap break-words font-mono text-muted-foreground">
-                        {stringifyWithBigInt(decoded)}
-                      </pre>
-                    )}
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <pre className="whitespace-pre font-mono text-muted-foreground text-xs">
+                          {stringifyWithBigInt(decoded)}
+                        </pre>
+                      )}
+                    </div>
                   </div>
                 ) : (
-                  <pre className="whitespace-pre-wrap break-words font-mono text-muted-foreground">
+                  <pre className="whitespace-pre font-mono text-muted-foreground text-xs">
                     {dataHex}
                   </pre>
                 )}
-              </ScrollBox>
+              </div>
             </div>
           </div>
-        </div>
+        </CredenzaBody>
         <CredenzaFooter>
           <div className="flex w-full justify-end gap-2">
             <Button

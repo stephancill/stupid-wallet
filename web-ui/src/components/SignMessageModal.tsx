@@ -1,8 +1,8 @@
 import { hexToString, isHex } from "viem";
 import React from "react";
+import Address from "@/components/Address";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
-import { ScrollBox } from "@/components/ui/scroll-box";
 import {
   Credenza,
   CredenzaContent,
@@ -45,22 +45,26 @@ export function SignMessageModal({
         if (!isOpen && !isSubmitting) onReject();
       }}
     >
-      <CredenzaContent className="sm:max-w-lg bg-card text-card-foreground">
+      <CredenzaContent className="sm:max-w-lg bg-card text-card-foreground max-h-[85vh] flex flex-col overflow-hidden">
         <CredenzaHeader>
           <CredenzaTitle>Sign Message</CredenzaTitle>
           <CredenzaDescription className="sr-only">
             Sign Message
           </CredenzaDescription>
         </CredenzaHeader>
-        <div className="body">
-          <div className="space-y-3 text-sm">
+        <div className="body flex-1 overflow-y-auto min-h-0">
+          <div className="space-y-3 text-sm px-2 pb-2">
             <div className="text-muted-foreground">
               Site: <strong className="text-foreground">{host}</strong>
             </div>
             <div>
               Address:{" "}
               <span className="font-mono text-muted-foreground">
-                {address || "(current)"}
+                {address && address.startsWith("0x") ? (
+                  <Address address={address} mono />
+                ) : (
+                  address || "(current)"
+                )}
               </span>
             </div>
             <div>
@@ -71,9 +75,14 @@ export function SignMessageModal({
             </div>
             <div>
               <div className="text-sm font-medium mb-2">Message</div>
-              <ScrollBox className="font-mono text-foreground break-words whitespace-pre-wrap">
-                {isHex(messageHex) ? hexToString(messageHex) : messageHex}
-              </ScrollBox>
+              <div
+                className="h-[200px] rounded-md border bg-muted/30 p-3 overflow-y-auto"
+                style={{ WebkitOverflowScrolling: "touch" }}
+              >
+                <div className="font-mono text-xs text-foreground break-words whitespace-pre-wrap">
+                  {isHex(messageHex) ? hexToString(messageHex) : messageHex}
+                </div>
+              </div>
             </div>
           </div>
         </div>

@@ -1,6 +1,4 @@
-import React from "react";
 import { createRoot, Root } from "react-dom/client";
-// Inline Tailwind CSS into Shadow DOM (using a dedicated bundle to ensure all layers/imports resolve)
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
 import shadowCss from "./shadow.css?inline";
@@ -25,7 +23,6 @@ export function createShadowMount(): ShadowMount {
   container.style.position = "fixed";
   container.style.inset = "0";
   container.style.zIndex = "2147483647";
-  // Allow host page to remain interactive when no modal is shown
   container.style.pointerEvents = "none";
 
   let shadow: ShadowRoot | HTMLElement;
@@ -40,84 +37,6 @@ export function createShadowMount(): ShadowMount {
     shadow = container;
   }
 
-  const tailwindStyle = document.createElement("style");
-  tailwindStyle.textContent = shadowCss as string;
-
-  const style = document.createElement("style");
-  style.textContent = `
-    :host { all: initial; }
-    *, *::before, *::after { box-sizing: border-box; }
-    @keyframes iosw-fade-in { from { opacity: 0 } to { opacity: 1 } }
-    .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 2147483647; }
-    .panel {
-      position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
-      width: min(92vw, 420px); background: #fff; color: #111;
-      border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-      animation: iosw-fade-in 120ms ease-out;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      overflow: hidden; z-index: 2147483647;
-    }
-    .header { padding: 16px 20px; border-bottom: 1px solid #eee; font-weight: 600; }
-    .body { padding: 16px 20px; }
-    .foot { padding: 16px 20px; display: flex; gap: 10px; justify-content: flex-end; }
-    .btn { padding: 10px 14px; border-radius: 8px; border: 1px solid transparent; cursor: pointer; font-weight: 600; }
-    .btn-secondary { background: #fff; color: #d00; border-color: #e5e5e5; }
-    .btn-primary { background: #2563eb; color: #fff; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .preview { background:#f9fafb; border:1px solid #eee; border-radius:8px; padding:12px; max-height:220px; overflow:auto; white-space:pre-wrap; }
-    .meta { color:#555; font-size:12px; margin-bottom: 6px; }
-    .row { display:flex; align-items:center; gap:10px; }
-    .kv { display:grid; grid-template-columns: 120px 1fr; gap:8px; }
-  `;
-
-  // Provide shadcn/tailwind CSS variables within the shadow root.
-  // Tailwind v4 defines tokens under :root / .dark in the page. Those do not cross into Shadow DOM,
-  // so we mirror them on :host here.
-  const vars = document.createElement("style");
-  vars.textContent = `
-    :host {
-      --radius: 0.625rem;
-      --background: oklch(1 0 0);
-      --foreground: oklch(0.145 0 0);
-      --card: oklch(1 0 0);
-      --card-foreground: oklch(0.145 0 0);
-      --popover: oklch(1 0 0);
-      --popover-foreground: oklch(0.145 0 0);
-      --primary: oklch(0.205 0 0);
-      --primary-foreground: oklch(0.985 0 0);
-      --secondary: oklch(0.97 0 0);
-      --secondary-foreground: oklch(0.205 0 0);
-      --muted: oklch(0.97 0 0);
-      --muted-foreground: oklch(0.556 0 0);
-      --accent: oklch(0.97 0 0);
-      --accent-foreground: oklch(0.205 0 0);
-      --destructive: oklch(0.577 0.245 27.325);
-      --border: oklch(0.922 0 0);
-      --input: oklch(0.922 0 0);
-      --ring: oklch(0.708 0 0);
-    }
-    :host(.dark) {
-      --background: oklch(0.145 0 0);
-      --foreground: oklch(0.985 0 0);
-      --card: oklch(0.205 0 0);
-      --card-foreground: oklch(0.985 0 0);
-      --popover: oklch(0.205 0 0);
-      --popover-foreground: oklch(0.985 0 0);
-      --primary: oklch(0.922 0 0);
-      --primary-foreground: oklch(0.205 0 0);
-      --secondary: oklch(0.269 0 0);
-      --secondary-foreground: oklch(0.985 0 0);
-      --muted: oklch(0.269 0 0);
-      --muted-foreground: oklch(0.708 0 0);
-      --accent: oklch(0.269 0 0);
-      --accent-foreground: oklch(0.985 0 0);
-      --destructive: oklch(0.704 0.191 22.216);
-      --border: oklch(1 0 0 / 10%);
-      --input: oklch(1 0 0 / 15%);
-      --ring: oklch(0.556 0 0);
-    }
-  `;
-
   const rootEl = document.createElement("div");
   // Tailwind base context so shadcn tokens/utilities apply within the shadow tree
   rootEl.className = "font-sans text-foreground";
@@ -125,43 +44,57 @@ export function createShadowMount(): ShadowMount {
   rootEl.style.pointerEvents = "auto";
   const portalEl = document.createElement("div");
 
-  shadow.appendChild(vars);
-  shadow.appendChild(tailwindStyle);
-  shadow.appendChild(style);
+  const styleEl = document.createElement("style");
+  styleEl.textContent = shadowCss as string;
+  shadow.appendChild(styleEl);
   shadow.appendChild(rootEl);
   shadow.appendChild(portalEl);
-  // Attach only to <body> to avoid altering <html> children which can break app frameworks
-  const attach = () => {
-    if (document.body && !container.isConnected) {
-      document.body.appendChild(container);
-    }
-  };
 
-  if (document.body) {
-    attach();
-  } else {
-    // Wait for body to exist (e.g., during early document load)
-    const observer = new MutationObserver(() => {
-      if (document.body) {
-        attach();
-        observer.disconnect();
-      }
+  // iOS: ensure scroll inside shadow tree doesn't bubble to page/drawer handlers
+  const isScrollable = (el: Element | null): boolean => {
+    if (!el || !(el instanceof HTMLElement)) return false;
+    const cs = getComputedStyle(el);
+    const canScrollY =
+      (cs.overflowY === "auto" || cs.overflowY === "scroll") &&
+      el.scrollHeight > el.clientHeight;
+    const canScrollX =
+      (cs.overflowX === "auto" || cs.overflowX === "scroll") &&
+      el.scrollWidth > el.clientWidth;
+    return canScrollX || canScrollY;
+  };
+  const findScrollable = (start: EventTarget | null): HTMLElement | null => {
+    let el: any = start;
+    while (el && el !== rootEl && el !== portalEl) {
+      if (isScrollable(el)) return el as HTMLElement;
+      el = el.parentElement;
+    }
+    return null;
+  };
+  const onTouchMoveCapture = (e: Event) => {
+    const target = (e as any).composedPath
+      ? ((e as any).composedPath()[0] as Element)
+      : (e.target as Element);
+    const scrollable = findScrollable(target);
+    if (scrollable) e.stopPropagation();
+  };
+  const onWheelCapture = (e: Event) => {
+    const target = (e as any).composedPath
+      ? ((e as any).composedPath()[0] as Element)
+      : (e.target as Element);
+    const scrollable = findScrollable(target);
+    if (scrollable) e.stopPropagation();
+  };
+  const hostEl = (shadow as any).host ?? container;
+  try {
+    hostEl.addEventListener("touchmove", onTouchMoveCapture, {
+      capture: true,
+      passive: true,
     });
-    try {
-      observer.observe(document.documentElement, {
-        childList: true,
-        subtree: true,
-      });
-    } catch {}
-    window.addEventListener(
-      "DOMContentLoaded",
-      () => {
-        attach();
-        observer.disconnect();
-      },
-      { once: true }
-    );
-  }
+    hostEl.addEventListener("wheel", onWheelCapture, {
+      capture: true,
+      passive: true,
+    });
+  } catch {}
 
   const root = createRoot(rootEl);
 
