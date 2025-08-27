@@ -26,12 +26,10 @@ export default defineConfig({
       output: {
         inlineDynamicImports: true,
         manualChunks: undefined,
-        banner:
-          "try{if(typeof document!==\"undefined\" && !document.head){var __h=document.createElement('head');if(document.documentElement){document.documentElement.insertBefore(__h, document.documentElement.firstChild || null);}}}catch(__e){}",
       },
     },
     sourcemap: false,
-    minify: "esbuild",
+    minify: false,
     target: "es2020",
   },
   resolve: {
