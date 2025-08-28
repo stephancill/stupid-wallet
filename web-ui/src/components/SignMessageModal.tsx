@@ -35,31 +35,15 @@ export function SignMessageModal({
       onPrimary={handleApprove}
       onReject={onReject}
       isSubmitting={isSubmitting}
+      address={address}
     >
       <div className="space-y-3 text-sm">
         <div className="text-muted-foreground">
-          Site: <strong className="text-foreground">{host}</strong>
-        </div>
-        <div>
-          Address:{" "}
-          <span className="font-mono text-muted-foreground">
-            {address && address.startsWith("0x") ? (
-              <Address address={address} mono />
-            ) : (
-              address || "(current)"
-            )}
-          </span>
-        </div>
-        <div>
-          Method:{" "}
-          <span className="font-mono text-muted-foreground">personal_sign</span>
+          Site <strong className="text-foreground">{host}</strong>
         </div>
         <div>
           <div className="text-sm font-medium mb-2">Message</div>
-          <div
-            className="h-[200px] rounded-md border bg-muted/30 p-3 overflow-y-auto"
-            style={{ WebkitOverflowScrolling: "touch" }}
-          >
+          <div>
             <div className="font-mono text-xs text-foreground break-words whitespace-pre-wrap">
               {isHex(messageHex) ? hexToString(messageHex) : messageHex}
             </div>

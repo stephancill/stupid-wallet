@@ -241,6 +241,7 @@ export function SignTypedDataModal({
       onPrimary={handleApprove}
       onReject={onReject}
       isSubmitting={isSubmitting}
+      address={address}
     >
       <div aria-busy={isAggregateLoading}>
         <div className="space-y-5">
@@ -283,43 +284,41 @@ export function SignTypedDataModal({
                         <span className="text-muted-foreground">Chain: </span>
                         <span className="text-foreground">
                           {(chain?.name || "Chain") +
-                            " (#" +
+                            " (" +
                             domainChainId +
                             ")"}
                         </span>
                       </div>
                     ) : null}
                     {isEnsLoading ? (
-                      <div>
-                        <span className="text-muted-foreground">
+                      <div className="flex items-center">
+                        <span className="text-muted-foreground flex-shrink-0">
                           Verifying Contract:{" "}
                         </span>
-                        <Skeleton className="h-3 w-36 inline-block align-middle" />
+                        <Skeleton className="h-3 w-36 ml-1" />
                       </div>
                     ) : domain?.verifyingContract ? (
-                      <div>
-                        <span className="text-muted-foreground">
+                      <div className="flex items-center">
+                        <span className="text-muted-foreground flex-shrink-0">
                           Verifying Contract:{" "}
                         </span>
-                        {(() => {
-                          const addr = String(domain.verifyingContract);
-                          if (addr.startsWith("0x")) {
-                            const name = ensMap?.[addr.toLowerCase()] || null;
-                            return name ? (
-                              <span>
-                                <span className="text-foreground">{name}</span>
-                                <span className="ml-2 font-mono text-muted-foreground">
-                                  {renderAddressLink(addr)}
-                                </span>
-                              </span>
-                            ) : (
-                              <span className="font-mono">
-                                {renderAddressLink(addr)}
-                              </span>
-                            );
-                          }
-                          return <span className="font-mono">{addr}</span>;
-                        })()}
+                        <div className="ml-1">
+                          {(() => {
+                            const addr = String(domain.verifyingContract);
+                            if (addr.startsWith("0x")) {
+                              const name = ensMap?.[addr.toLowerCase()] || null;
+                              return (
+                                <Address
+                                  address={addr}
+                                  className="font-mono"
+                                  mono
+                                  withEnsNameAbove={name}
+                                />
+                              );
+                            }
+                            return <span className="font-mono">{addr}</span>;
+                          })()}
+                        </div>
                       </div>
                     ) : null}
                   </div>
@@ -338,7 +337,7 @@ export function SignTypedDataModal({
               <Skeleton className="h-20 w-full" />
             ) : rootFields.length > 0 && message ? (
               <div
-                className="h-[20vh] w-full overflow-y-auto overflow-x-auto"
+                className="w-full overflow-y-auto overflow-x-auto"
                 style={{
                   WebkitOverflowScrolling: "touch",
                   touchAction: "auto",

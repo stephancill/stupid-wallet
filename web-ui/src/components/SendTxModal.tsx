@@ -3,6 +3,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { whatsabi } from "@shazow/whatsabi";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { Copy } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   createPublicClient,
   decodeFunctionData,
@@ -37,6 +39,7 @@ export function SendTxModal({
   onReject,
 }: SendTxModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showCopied, setShowCopied] = useState(false);
   const to = useMemo(() => tx.to || "(contract creation)", [tx]);
   const from = useMemo(() => tx.from || "", [tx]);
   const rawValue = useMemo(() => tx.value ?? "0x0", [tx]);
@@ -311,12 +314,39 @@ export function SendTxModal({
     }
   };
 
+  const handleCopyCalldata = async () => {
+    try {
+      await navigator.clipboard.writeText(dataHex);
+      setShowCopied(true);
+      setTimeout(() => setShowCopied(false), 2000);
+    } catch (error) {
+      console.error("Failed to copy calldata:", error);
+    }
+  };
+
   return (
     <RequestModal
       primaryButtonTitle="Send"
       onPrimary={handleApprove}
       onReject={onReject}
       isSubmitting={isSubmitting}
+      address={from}
+      footerChildren={
+        dataHex !== "0x" && (
+          <div className="flex w-full justify-center">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs h-8 px-2 text-muted-foreground hover:text-foreground"
+              onClick={handleCopyCalldata}
+              title="Copy transaction calldata"
+            >
+              <Copy className="h-3 w-3 mr-1" />
+              {showCopied ? "Copied" : ""}
+            </Button>
+          </div>
+        )
+      }
     >
       <div aria-busy={isAggregateLoading}>
         <div className="space-y-5">
@@ -327,48 +357,26 @@ export function SendTxModal({
             </div>
             <div className="text-sm text-muted-foreground">To</div>
             <div className="text-sm break-all">
-              {names?.toName ? (
-                <div className="font-medium text-foreground">
-                  {names.toName}
-                </div>
-              ) : isNamesLoading ? (
-                <Skeleton className="h-3 w-24" />
-              ) : null}
-              <div className="font-mono text-muted-foreground">
+              <div>
                 {typeof to === "string" && to.startsWith("0x") ? (
                   <Address
                     address={to}
-                    mono
                     withEnsNameAbove={names?.toName || undefined}
                   />
                 ) : (
                   to
-                )}
+                )}{" "}
+                {abiLoadResult?.contractResult?.name
+                  ? `(${abiLoadResult.contractResult.name})`
+                  : null}
               </div>
             </div>
-            {isAbiLoadLoading ? (
-              <>
-                <div className="text-sm text-muted-foreground">Contract</div>
-                <div className="text-sm break-all">
-                  <Skeleton className="h-3 w-24" />
-                </div>
-              </>
-            ) : abiLoadResult?.contractResult?.name ? (
-              <>
-                <div className="text-sm text-muted-foreground">Contract</div>
-                <div className="text-sm break-all">
-                  <div className="font-medium text-foreground">
-                    {abiLoadResult.contractResult.name}
-                  </div>
-                </div>
-              </>
-            ) : null}
             <div className="text-sm text-muted-foreground">Value</div>
-            <div className="text-sm font-mono">{valueEth} ETH</div>
+            <div className="text-sm">{valueEth} ETH</div>
             <div className="text-sm text-muted-foreground">Chain</div>
             <div className="text-sm break-all">
-              <div className="font-medium text-foreground">
-                {chain?.name || "Unknown Chain"} ({chainId || "Unknown"})
+              <div className="text-foreground" title={chainId?.toString()}>
+                {chain?.name || "Unknown Chain"}
               </div>
             </div>
           </div>
@@ -407,7 +415,7 @@ export function SendTxModal({
                       const label = input?.name || `arg${i}`;
                       const type = input?.type || "unknown";
                       return (
-                        <div key={i} className="p-2">
+                        <div key={i} className="py-2">
                           <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
                             {label}
                             <span className="ml-1 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">

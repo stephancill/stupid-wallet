@@ -1,5 +1,6 @@
 import React from "react";
 import { createIcon } from "@download/blockies";
+import { ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type AddressProps = {
@@ -7,6 +8,7 @@ type AddressProps = {
   className?: string;
   mono?: boolean;
   withEnsNameAbove?: string | null;
+  noLink?: boolean;
 };
 
 function truncateMiddle(value: string, head = 6, tail = 4): string {
@@ -20,6 +22,7 @@ export function Address({
   className,
   mono,
   withEnsNameAbove,
+  noLink = false,
 }: AddressProps) {
   const ref = React.useRef<HTMLSpanElement | null>(null);
 
@@ -28,7 +31,7 @@ export function Address({
       return;
     const canvas = createIcon({
       seed: address.toLowerCase(),
-      size: 8,
+      size: 6,
       scale: 3,
     });
     canvas.style.borderRadius = "4px";
@@ -45,7 +48,14 @@ export function Address({
     };
   }, [address]);
 
-  const content = (
+  const content = noLink ? (
+    <span className={cn("inline-flex items-center gap-2", className)}>
+      <span ref={ref} aria-hidden="true" />
+      <span className={cn(mono ? "font-mono" : undefined, "break-all")}>
+        {truncateMiddle(address)}
+      </span>
+    </span>
+  ) : (
     <a
       href={`https://blockscan.com/address/${address}`}
       target="_blank"
@@ -56,6 +66,7 @@ export function Address({
       <span className={cn(mono ? "font-mono" : undefined, "break-all")}>
         {truncateMiddle(address)}
       </span>
+      <ExternalLink className="h-3 w-3 opacity-60 flex-shrink-0" />
     </a>
   );
 
