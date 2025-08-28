@@ -383,60 +383,61 @@ export function SendTxModal({
 
           <div>
             {isAbiLoadLoading ? (
-              <Skeleton className="h-2 w-full" />
+              <div className="space-y-3">
+                <Skeleton className="h-3 w-full" />
+                <Skeleton className="h-16 w-full" />
+              </div>
             ) : decoded ? (
-              <div className="space-y-2">
-                <div className="text-sm">
-                  <span className="font-medium text-foreground">
-                    {decoded.functionName}
-                  </span>
-                  <span className="text-muted-foreground">
-                    {"("}
-                    {(functionItem?.inputs || [])
-                      .map((inp: any, i: number) =>
-                        [inp?.type || "unknown", inp?.name || `arg${i}`].join(
-                          " "
+              <>
+                <div className="space-y-2">
+                  <div className="text-sm">
+                    <span className="font-medium text-foreground">
+                      {decoded.functionName}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {"("}
+                      {(functionItem?.inputs || [])
+                        .map((inp: any, i: number) =>
+                          [inp?.type || "unknown", inp?.name || `arg${i}`].join(
+                            " "
+                          )
                         )
-                      )
-                      .join(", ")}
-                    {")"}
-                  </span>
-                </div>
-              </div>
-            ) : null}
-            {isAbiLoadLoading ? (
-              <Skeleton className="h-16 w-full" />
-            ) : decoded ? (
-              <div className="space-y-2">
-                {(functionItem?.inputs?.length || 0) > 0 ? (
-                  <div className="divide-y divide-border rounded-md border">
-                    {(decoded.args || []).map((arg: any, i: number) => {
-                      const input = (functionItem?.inputs as any)?.[i] || {};
-                      const label = input?.name || `arg${i}`;
-                      const type = input?.type || "unknown";
-                      return (
-                        <div key={i} className="py-2">
-                          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                            {label}
-                            <span className="ml-1 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
-                              {type}
-                            </span>
-                          </div>
-                          <div className="mt-1 text-xs text-foreground break-words">
-                            {renderArgValue(arg, type)}
-                          </div>
-                        </div>
-                      );
-                    })}
+                        .join(", ")}
+                      {")"}
+                    </span>
                   </div>
-                ) : (
-                  <pre className="whitespace-pre font-mono text-muted-foreground text-[10px]">
-                    {stringifyWithBigInt(decoded)}
-                  </pre>
-                )}
-              </div>
+                </div>
+                <div className="space-y-2">
+                  {(functionItem?.inputs?.length || 0) > 0 ? (
+                    <div className="divide-y divide-border rounded-md border">
+                      {(decoded.args || []).map((arg: any, i: number) => {
+                        const input = (functionItem?.inputs as any)?.[i] || {};
+                        const label = input?.name || `arg${i}`;
+                        const type = input?.type || "unknown";
+                        return (
+                          <div key={i} className="py-2">
+                            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                              {label}
+                              <span className="ml-1 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+                                {type}
+                              </span>
+                            </div>
+                            <div className="mt-1 text-xs text-foreground break-words">
+                              {renderArgValue(arg, type)}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <pre className="whitespace-pre font-mono text-muted-foreground text-[10px]">
+                      {stringifyWithBigInt(decoded)}
+                    </pre>
+                  )}
+                </div>
+              </>
             ) : (
-              <pre className="whitespace-pre font-mono text-muted-foreground text-[10px]">
+              <pre className="whitespace-pre-wrap font-mono text-muted-foreground text-[10px] break-words">
                 {dataHex}
               </pre>
             )}

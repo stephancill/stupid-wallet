@@ -260,72 +260,72 @@ export function SignTypedDataModal({
                 </div>
               </>
             ) : null}
-            {parsed ? (
-              <>
-                <div className="text-muted-foreground">Domain</div>
-                <div className="break-all">
-                  <div className="space-y-1">
-                    {domain?.name ? (
-                      <div>
-                        <span className="text-muted-foreground">Name: </span>
-                        <span className="text-foreground">{domain.name}</span>
-                      </div>
-                    ) : null}
-                    {domain?.version ? (
-                      <div>
-                        <span className="text-muted-foreground">Version: </span>
-                        <span className="text-foreground">
-                          {domain.version}
-                        </span>
-                      </div>
-                    ) : null}
-                    {domainChainId ? (
-                      <div>
-                        <span className="text-muted-foreground">Chain: </span>
-                        <span className="text-foreground">
-                          {(chain?.name || "Chain") +
-                            " (" +
-                            domainChainId +
-                            ")"}
-                        </span>
-                      </div>
-                    ) : null}
-                    {isEnsLoading ? (
-                      <div className="flex items-center">
-                        <span className="text-muted-foreground flex-shrink-0">
-                          Verifying Contract:{" "}
-                        </span>
-                        <Skeleton className="h-3 w-36 ml-1" />
-                      </div>
-                    ) : domain?.verifyingContract ? (
-                      <div className="flex items-center">
-                        <span className="text-muted-foreground flex-shrink-0">
-                          Verifying Contract:{" "}
-                        </span>
-                        <div className="ml-1">
-                          {(() => {
-                            const addr = String(domain.verifyingContract);
-                            if (addr.startsWith("0x")) {
-                              const name = ensMap?.[addr.toLowerCase()] || null;
-                              return (
-                                <Address
-                                  address={addr}
-                                  className="font-mono"
-                                  mono
-                                  withEnsNameAbove={name}
-                                />
-                              );
-                            }
-                            return <span className="font-mono">{addr}</span>;
-                          })()}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              </>
-            ) : null}
           </div>
+
+          {parsed ? (
+            <div>
+              <div className="text-sm font-medium mb-2">Domain</div>
+              <div className="space-y-3">
+                {domain?.name ? (
+                  <div>
+                    <div className="text-muted-foreground text-xs uppercase tracking-wide mb-1">
+                      Name
+                    </div>
+                    <div className="text-foreground">{domain.name}</div>
+                  </div>
+                ) : null}
+                {domain?.version ? (
+                  <div>
+                    <div className="text-muted-foreground text-xs uppercase tracking-wide mb-1">
+                      Version
+                    </div>
+                    <div className="text-foreground">{domain.version}</div>
+                  </div>
+                ) : null}
+                {domainChainId ? (
+                  <div>
+                    <div className="text-muted-foreground text-xs uppercase tracking-wide mb-1">
+                      Chain
+                    </div>
+                    <div className="text-foreground">
+                      {(chain?.name || "Chain") + " (" + domainChainId + ")"}
+                    </div>
+                  </div>
+                ) : null}
+                {isEnsLoading ? (
+                  <div>
+                    <div className="text-muted-foreground text-xs uppercase tracking-wide mb-1">
+                      Verifying Contract
+                    </div>
+                    <Skeleton className="h-3 w-36" />
+                  </div>
+                ) : domain?.verifyingContract ? (
+                  <div>
+                    <div className="text-muted-foreground text-xs uppercase tracking-wide mb-1">
+                      Verifying Contract
+                    </div>
+                    <div>
+                      {(() => {
+                        const addr = String(domain.verifyingContract);
+                        if (addr.startsWith("0x")) {
+                          const name = ensMap?.[addr.toLowerCase()] || null;
+                          return (
+                            <Address
+                              address={addr}
+                              className="font-mono"
+                              mono
+                              withEnsNameAbove={name}
+                            />
+                          );
+                        }
+                        return <span className="font-mono">{addr}</span>;
+                      })()}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
 
           <div>
             <div className="text-sm font-medium mb-2">Message</div>
