@@ -1,80 +1,78 @@
 import React from "react";
-import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
-import {
-  Credenza,
-  CredenzaContent,
-  CredenzaDescription,
-  CredenzaFooter,
-  CredenzaHeader,
-  CredenzaTitle,
-} from "@/components/ui/credenza";
+import { useQuery } from "@tanstack/react-query";
+import Address from "@/components/Address";
+import { RequestModal } from "@/components/RequestModal";
 
 type ConnectModalProps = {
   host: string;
+  address?: string;
   onApprove: () => void;
   onReject: () => void;
 };
 
-export function ConnectModal({ host, onApprove, onReject }: ConnectModalProps) {
+export function ConnectModal({
+  host,
+  address: providedAddress,
+  onApprove,
+  onReject,
+}: ConnectModalProps) {
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
-  const handlePrimaryClick = async () => {
+  const { data: accounts, isLoading: isAccountsLoading } = useQuery({
+    queryKey: ["accounts"],
+    queryFn: async () => {
+      const { result }: { result: string[] } =
+        await browser.runtime.sendMessage({
+          type: "WALLET_REQUEST",
+          method: "eth_accounts",
+          params: [],
+        });
+      return result || [];
+    },
+    enabled: !providedAddress,
+  });
+
+  const walletAddress = providedAddress || accounts?.[0];
+
+  const handleApprove = async () => {
     try {
       setIsSubmitting(true);
       await onApprove();
-    } catch (_) {
+    } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <Credenza
-      open
-      onOpenChange={(isOpen) => {
-        if (!isOpen && !isSubmitting) onReject();
-      }}
+    <RequestModal
+      primaryButtonTitle="Connect"
+      onPrimary={handleApprove}
+      onReject={onReject}
+      isSubmitting={isSubmitting}
     >
-      <CredenzaContent className="sm:max-w-lg bg-card text-card-foreground">
-        <CredenzaHeader>
-          <CredenzaTitle>Connect Wallet</CredenzaTitle>
-          <CredenzaDescription className="sr-only">
-            Connect Wallet
-          </CredenzaDescription>
-        </CredenzaHeader>
-        <div className="body">
-          <div className="text-sm">
-            This site wants to connect to your wallet.
+      <div className="space-y-4 text-sm">
+        <div>This site wants to connect to your wallet.</div>
+        <div className="grid grid-cols-[60px_1fr] gap-x-3 gap-y-2">
+          <div className="text-muted-foreground">Site</div>
+          <div className="break-all">
+            <strong className="text-foreground">{host}</strong>
           </div>
-          <div className="mt-2 text-xs text-muted-foreground">
-            Site: <strong className="text-foreground">{host}</strong>
+          <div className="text-muted-foreground">Wallet</div>
+          <div className="break-all">
+            {isAccountsLoading && !providedAddress ? (
+              <div className="text-muted-foreground">
+                Loading wallet address...
+              </div>
+            ) : walletAddress ? (
+              <Address address={walletAddress} mono />
+            ) : (
+              <div className="text-muted-foreground">
+                No wallet address available
+              </div>
+            )}
           </div>
         </div>
-        <CredenzaFooter>
-          <div className="flex w-full justify-end gap-2">
-            <Button
-              variant="secondary"
-              onClick={onReject}
-              disabled={isSubmitting}
-            >
-              Reject
-            </Button>
-            <Button
-              onClick={handlePrimaryClick}
-              disabled={isSubmitting}
-              aria-busy={isSubmitting}
-            >
-              {isSubmitting ? (
-                <span className="inline-flex items-center">
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                </span>
-              ) : (
-                "Connect"
-              )}
-            </Button>
-          </div>
-        </CredenzaFooter>
-      </CredenzaContent>
-    </Credenza>
+      </div>
+    </RequestModal>
   );
 }
