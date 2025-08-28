@@ -13,6 +13,8 @@ import Web3
 import Web3PromiseKit
 import PromiseKit
 import BigInt
+import Wallet
+import Model
 
 private let appGroupId = "group.co.za.stephancill.stupid-wallet" // TODO: set your App Group ID in project capabilities
 
@@ -38,15 +40,22 @@ final class WalletViewModel: ObservableObject {
     @Published var balances: [String: String] = [:] // network name -> formatted balance
     @Published var biometryAvailable: Bool = false
 
+    // Private key reveal functionality
+    @Published var showPrivateKeySheet: Bool = false
+    @Published var revealedPrivateKey: String = ""
+    @Published var isRevealingPrivateKey: Bool = false
+    @Published var privateKeyError: String?
+    @Published var didCopyPrivateKey: Bool = false
+
     init() {
         loadPersistedAddress()
         biometryAvailable = isBiometrySupported()
-        // Ensure ciphertext is available to the Safari extension on first run after updates
-        if hasWallet, !addressHex.isEmpty {
-            KeyManagement.syncCiphertextToSharedGroupIfNeeded(addressHex: addressHex)
-            // Preflight to surface auth prompt on app open
-            KeyManagement.preflightAuthentication(addressHex: addressHex)
-        }
+                    // Ensure ciphertext is available to the Safari extension on first run after updates
+            if hasWallet, !addressHex.isEmpty {
+                KeyManagement.syncCiphertextToSharedGroupIfNeeded(addressHex: addressHex)
+                // Preflight to surface auth prompt on app open
+                _ = KeyManagement.preflightAuthentication(addressHex: addressHex)
+            }
         if hasWallet {
             Task { await refreshAllBalances() }
         }
@@ -90,15 +99,7 @@ final class WalletViewModel: ObservableObject {
         }
 
         do {
-            // Build Web3 key for address derivation
-            let pk: EthereumPrivateKey
-            if trimmed.lowercased().hasPrefix("0x") {
-                pk = try EthereumPrivateKey(hexPrivateKey: trimmed)
-            } else {
-                pk = try EthereumPrivateKey(hexPrivateKey: "0x" + trimmed)
-            }
-
-            // Encrypt and store securely via KeyManagement helper
+            // Convert hex string to bytes
             let hexNoPrefix = trimmed.lowercased().hasPrefix("0x") ? String(trimmed.dropFirst(2)) : trimmed
             var rawBytes: [UInt8] = []
             rawBytes.reserveCapacity(hexNoPrefix.count / 2)
@@ -109,9 +110,15 @@ final class WalletViewModel: ObservableObject {
                 if let b = UInt8(byteStr, radix: 16) { rawBytes.append(b) }
                 idx = next
             }
+
+            // Encrypt and store securely via KeyManagement helper
             try KeyManagement.encryptPrivateKey(rawBytes: rawBytes, requireBiometricsOnly: false)
 
-            let addr = pk.address.hex(eip55: true)
+            // Derive address from the raw bytes using Web3
+            let privateKeyData = Data(rawBytes)
+            let privateKey = try EthereumPrivateKey(privateKeyData)
+            let address = privateKey.address
+            let addr = address.hex(eip55: true)
             addressHex = addr
             hasWallet = true
             if let defaults = UserDefaults(suiteName: appGroupId) {
@@ -162,6 +169,41 @@ final class WalletViewModel: ObservableObject {
         errorMessage = nil
     }
 
+    func revealPrivateKey() {
+        privateKeyError = nil
+        isRevealingPrivateKey = true
+        revealedPrivateKey = ""
+
+        Task {
+            do {
+                let account = EthereumAccount(address: try Model.EthereumAddress(hex: addressHex))
+                let hexKey = try account.accessPrivateKey(accessGroup: Constants.accessGroup) { privateKeyBytes in
+                    return "0x" + privateKeyBytes.map { String(format: "%02x", $0) }.joined()
+                }
+
+                await MainActor.run {
+                    revealedPrivateKey = hexKey
+                    showPrivateKeySheet = true
+                    isRevealingPrivateKey = false
+                }
+            } catch {
+                await MainActor.run {
+                    privateKeyError = error.localizedDescription
+                    isRevealingPrivateKey = false
+                }
+            }
+        }
+    }
+
+    func copyPrivateKey() {
+        guard !revealedPrivateKey.isEmpty else { return }
+        UIPasteboard.general.string = revealedPrivateKey
+        didCopyPrivateKey = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            self.didCopyPrivateKey = false
+        }
+    }
+
     @MainActor
     func refreshAllBalances() async {
         for (name, _, _) in Constants.Networks.networksList { balances[name] = "Loading..." }
@@ -208,6 +250,7 @@ private extension String {
 struct ContentView: View {
     @StateObject private var vm = WalletViewModel()
     @State private var didCopyAddress = false
+    @State private var showClearWalletConfirmation = false
 
     var body: some View {
         NavigationView {
@@ -224,6 +267,9 @@ struct ContentView: View {
                     Button("Refresh") { Task { await vm.refreshAllBalances() } }
                 }
             }
+        }
+        .sheet(isPresented: $vm.showPrivateKeySheet) {
+            privateKeySheet
         }
     }
 
@@ -297,10 +343,45 @@ struct ContentView: View {
 
                 Divider()
 
-                
+                VStack(spacing: 12) {
+                    HStack {
+                        Button(action: { vm.revealPrivateKey() }) {
+                            if vm.isRevealingPrivateKey {
+                                HStack {
+                                    ProgressView()
+                                    Text("Authenticating...")
+                                }
+                            } else {
+                                Text("Show Private Key")
+                            }
+                        }
+                        Spacer()
+                    }
 
-                Button(role: .destructive, action: { vm.clearWallet() }) {
-                    Text("Clear Wallet")
+                    HStack {
+                        Button(role: .destructive, action: { showClearWalletConfirmation = true }) {
+                            Text("Clear Wallet")
+                        }
+                        Spacer()
+                    }
+                    .confirmationDialog(
+                        "Clear Wallet",
+                        isPresented: $showClearWalletConfirmation,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Clear Wallet", role: .destructive) {
+                            vm.clearWallet()
+                        }
+                        Button("Cancel", role: .cancel) { }
+                    } message: {
+                        Text("This will permanently delete your wallet and private key from this device. Make sure you have backed up your private key before proceeding.")
+                    }
+                }
+
+                if let error = vm.privateKeyError, !error.isEmpty {
+                    Text("Error: \(error)")
+                        .foregroundColor(.red)
+                        .font(.footnote)
                 }
             }
             .padding()
@@ -313,6 +394,65 @@ struct ContentView: View {
             Spacer()
             Text(value ?? "–")
                 .font(.system(.footnote, design: .monospaced))
+        }
+    }
+
+    private var privateKeySheet: some View {
+        Form {
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label {
+                        Text("Security Warning")
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                    }
+                    .font(.headline)
+
+                    Text("Your private key gives full access to your wallet and funds. Never share it with anyone, and keep it secure.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Section("Private Key") {
+                if !vm.revealedPrivateKey.isEmpty {
+                    Text(vm.revealedPrivateKey)
+                        .font(.system(.body, design: .monospaced))
+                        .textSelection(.enabled)
+                        .lineLimit(nil)
+                        .padding(.vertical, 4)
+                } else {
+                    Text("No private key available")
+                        .foregroundColor(.secondary)
+                }
+
+                Button(action: { vm.copyPrivateKey() }) {
+                    if vm.didCopyPrivateKey {
+                        Label("Copied!", systemImage: "checkmark")
+                    } else {
+                        Label("Copy Private Key", systemImage: "doc.on.doc")
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+            }
+
+            if let error = vm.privateKeyError, !error.isEmpty {
+                Section {
+                    Text("Error: \(error)")
+                        .foregroundColor(.red)
+                }
+            }
+        }
+        .navigationTitle("Private Key")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("Done") {
+                    vm.showPrivateKeySheet = false
+                    vm.revealedPrivateKey = "" // Clear for security
+                }
+            }
         }
     }
 }
