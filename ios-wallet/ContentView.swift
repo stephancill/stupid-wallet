@@ -254,11 +254,12 @@ struct ContentView: View {
     @State private var showClearWalletConfirmation = false
 
     // Generate blockies image for the address
-    private func blockiesImage(for address: String, size: CGSize = CGSize(width: 32, height: 32)) -> Image? {
+    private func blockiesImage(for address: String, size: CGFloat = 24) -> Image? {
         guard !address.isEmpty else { return nil }
 
-        let blockies = Blockies(seed: address, size: 8, scale: 4)
-        guard let uiImage = blockies.createImage(customScale: 1) else { return nil }
+        let scale = max(5, Int(size) / 8)
+        let blockies = Blockies(seed: address.lowercased(), size: 8, scale: scale)
+        guard let uiImage = blockies.createImage() else { return nil }
 
         return Image(uiImage: uiImage)
     }
@@ -324,9 +325,10 @@ struct ContentView: View {
                     Text("Address")
                         .font(.headline)
                     HStack(alignment: .center, spacing: 8) {
-                        if let blockies = blockiesImage(for: vm.addressHex) {
+                        if let blockies = blockiesImage(for: vm.addressHex, size: 24) {
                             blockies
                                 .resizable()
+                                .aspectRatio(contentMode: .fill)
                                 .frame(width: 24, height: 24)
                                 .cornerRadius(4)
                                 .overlay(

@@ -311,3 +311,39 @@ extension Character {
         }
     }
 }
+
+// MARK: - Preview
+#if DEBUG
+import SwiftUI
+
+#Preview("Blockies Example") {
+    VStack(spacing: 20) {
+        Text("Blockies Preview")
+            .font(.title)
+            .padding()
+
+        // Generate blockies for the specific address
+        if let blockiesImage = generateBlockiesPreview() {
+            Image(uiImage: blockiesImage)
+                .resizable()
+                .frame(width: 100, height: 100)
+                .clipShape(Circle())
+                .overlay(Circle().stroke(Color.gray.opacity(0.3), lineWidth: 2))
+        }
+
+        Text("0x8d25...0a89")
+            .font(.system(.caption, design: .monospaced))
+            .foregroundColor(.secondary)
+
+        Spacer()
+    }
+    .padding()
+}
+
+private func generateBlockiesPreview() -> UIImage? {
+    let address = "0x8d25687829D6b85d9e0020B8c89e3Ca24dE20a89"
+    let scale = max(5, 100 / 8) // For 100pt display size
+    let blockies = Blockies(seed: address.lowercased(), size: 8, scale: scale)
+    return blockies.createImage()
+}
+#endif
