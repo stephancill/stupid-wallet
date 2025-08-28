@@ -20,15 +20,8 @@ async function init() {
     import("./components/Providers"),
   ]);
 
-  const { root, container, shadow } = createShadowMount();
-  // Mirror host page dark mode onto the shadow host once
-  try {
-    const isDark = document.documentElement.classList.contains("dark");
-    if (isDark) {
-      (shadow as any).host?.classList?.add("dark");
-    }
-  } catch {}
-  // Attach to body
+  const { root, container } = createShadowMount();
+
   try {
     if (document.body && !container.isConnected) {
       document.body.appendChild(container);
