@@ -43,7 +43,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		D4F3895E2E51FA740019E0C0 /* ios-wallet.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "ios-wallet.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		D4F3895E2E51FA740019E0C0 /* stupid wallet.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "stupid wallet.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		D4F389702E51FA9D0019E0C0 /* safari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = safari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -130,7 +130,7 @@
 		D4F3895F2E51FA740019E0C0 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				D4F3895E2E51FA740019E0C0 /* ios-wallet.app */,
+				D4F3895E2E51FA740019E0C0 /* stupid wallet.app */,
 				D4F389702E51FA9D0019E0C0 /* safari.appex */,
 			);
 			name = Products;
@@ -139,9 +139,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		D4F3895D2E51FA740019E0C0 /* ios-wallet */ = {
+		D4F3895D2E51FA740019E0C0 /* stupid wallet */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = D4F389692E51FA760019E0C0 /* Build configuration list for PBXNativeTarget "ios-wallet" */;
+			buildConfigurationList = D4F389692E51FA760019E0C0 /* Build configuration list for PBXNativeTarget "stupid wallet" */;
 			buildPhases = (
 				D4F3895A2E51FA740019E0C0 /* Sources */,
 				D4F3895B2E51FA740019E0C0 /* Frameworks */,
@@ -157,15 +157,15 @@
 				D421554A2E55E63E00EF2E37 /* shared */,
 				D4F389602E51FA740019E0C0 /* ios-wallet */,
 			);
-			name = "ios-wallet";
+			name = "stupid wallet";
 			packageProductDependencies = (
 				D4F389912E5208850019E0C0 /* Web3 */,
 				D4F389932E5208850019E0C0 /* Web3ContractABI */,
 				D4F389952E5208850019E0C0 /* Web3PromiseKit */,
 				D4F3899B2E52169F0019E0C0 /* Wallet */,
 			);
-			productName = "ios-wallet";
-			productReference = D4F3895E2E51FA740019E0C0 /* ios-wallet.app */;
+			productName = "stupid wallet";
+			productReference = D4F3895E2E51FA740019E0C0 /* stupid wallet.app */;
 			productType = "com.apple.product-type.application";
 		};
 		D4F3896F2E51FA9D0019E0C0 /* safari */ = {
@@ -232,7 +232,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				D4F3895D2E51FA740019E0C0 /* ios-wallet */,
+				D4F3895D2E51FA740019E0C0 /* stupid wallet */,
 				D4F3896F2E51FA9D0019E0C0 /* safari */,
 			);
 		};
@@ -360,6 +360,8 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER_BASE = "co.za.stephancill.stupid-wallet";
+				PRODUCT_NAME = "stupid wallet";
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -417,6 +419,8 @@
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER_BASE = "co.za.stephancill.stupid-wallet";
+				PRODUCT_NAME = "stupid wallet";
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
@@ -430,11 +434,11 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "ios-wallet/ios-wallet.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 16;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6JKMV57Y77;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "stupid wallet";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(PRODUCT_NAME) (dev)";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Used to authorize transactions and message signatures.";
@@ -448,7 +452,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "co.za.stephancill.stupid-wallet";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_IDENTIFIER_BASE).dev";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -465,11 +469,11 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "ios-wallet/ios-wallet.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 16;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6JKMV57Y77;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "stupid wallet";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(PRODUCT_NAME)";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Used to authorize transactions and message signatures.";
@@ -483,7 +487,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "co.za.stephancill.stupid-wallet";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_IDENTIFIER_BASE)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -503,8 +507,9 @@
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = safari/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "stupid wallet";
+				INFOPLIST_KEY_CFBundleDisplayName = "stupid wallet (dev)";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Face ID is used to authorize transactions and message signatures.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -517,7 +522,7 @@
 					"-framework",
 					SafariServices,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "co.za.stephancill.stupid-wallet.safari";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_IDENTIFIER_BASE).dev.extension";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -538,6 +543,7 @@
 				INFOPLIST_FILE = safari/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "stupid wallet";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Face ID is used to authorize transactions and message signatures.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -550,7 +556,7 @@
 					"-framework",
 					SafariServices,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "co.za.stephancill.stupid-wallet.safari";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_IDENTIFIER_BASE).extension";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -571,7 +577,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		D4F389692E51FA760019E0C0 /* Build configuration list for PBXNativeTarget "ios-wallet" */ = {
+		D4F389692E51FA760019E0C0 /* Build configuration list for PBXNativeTarget "stupid wallet" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				D4F3896A2E51FA760019E0C0 /* Debug */,
