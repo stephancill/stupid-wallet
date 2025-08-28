@@ -15,6 +15,7 @@ import PromiseKit
 import BigInt
 import Wallet
 import Model
+import CoreGraphics
 
 private let appGroupId = "group.co.za.stephancill.stupid-wallet" // TODO: set your App Group ID in project capabilities
 
@@ -252,6 +253,26 @@ struct ContentView: View {
     @State private var didCopyAddress = false
     @State private var showClearWalletConfirmation = false
 
+    // Generate blockies image for the address
+    private func blockiesImage(for address: String, size: CGSize = CGSize(width: 32, height: 32)) -> Image? {
+        guard !address.isEmpty else { return nil }
+
+        let blockies = Blockies(seed: address, size: 8, scale: 4)
+        guard let uiImage = blockies.createImage(customScale: 1) else { return nil }
+
+        return Image(uiImage: uiImage)
+    }
+
+    // Truncate address to show first and last 4 characters
+    private func truncatedAddress(_ address: String) -> String {
+        guard address.hasPrefix("0x") && address.count > 10 else { return address }
+        let startIndex = address.index(address.startIndex, offsetBy: 2)
+        let endIndex = address.index(address.endIndex, offsetBy: -4)
+        let first4 = address[startIndex..<address.index(startIndex, offsetBy: 4)]
+        let last4 = address[endIndex..<address.endIndex]
+        return "0x\(first4)...\(last4)"
+    }
+
     var body: some View {
         NavigationView {
             Group {
@@ -262,11 +283,6 @@ struct ContentView: View {
                 }
             }
             .navigationTitle("stupid wallet")
-            .toolbar {
-                if vm.hasWallet {
-                    Button("Refresh") { Task { await vm.refreshAllBalances() } }
-                }
-            }
         }
         .sheet(isPresented: $vm.showPrivateKeySheet) {
             privateKeySheet
@@ -308,7 +324,17 @@ struct ContentView: View {
                     Text("Address")
                         .font(.headline)
                     HStack(alignment: .center, spacing: 8) {
-                        Text(vm.addressHex)
+                        if let blockies = blockiesImage(for: vm.addressHex) {
+                            blockies
+                                .resizable()
+                                .frame(width: 24, height: 24)
+                                .cornerRadius(4)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                                )
+                        }
+                        Text(truncatedAddress(vm.addressHex))
                             .font(.system(.footnote, design: .monospaced))
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -320,13 +346,8 @@ struct ContentView: View {
                                 didCopyAddress = false
                             }
                         }) {
-                            if didCopyAddress {
-                                Label("Copied", systemImage: "checkmark")
-                            } else {
-                                Label("Copy", systemImage: "doc.on.doc")
-                            }
+                            Image(systemName: didCopyAddress ? "checkmark" : "doc.on.doc")
                         }
-                        .buttonStyle(.bordered)
                     }
                     
                 }
@@ -347,10 +368,7 @@ struct ContentView: View {
                     HStack {
                         Button(action: { vm.revealPrivateKey() }) {
                             if vm.isRevealingPrivateKey {
-                                HStack {
-                                    ProgressView()
-                                    Text("Authenticating...")
-                                }
+                                ProgressView()
                             } else {
                                 Text("Show Private Key")
                             }
@@ -385,6 +403,9 @@ struct ContentView: View {
                 }
             }
             .padding()
+        }
+        .refreshable {
+            await vm.refreshAllBalances()
         }
     }
 
@@ -428,11 +449,7 @@ struct ContentView: View {
                 }
 
                 Button(action: { vm.copyPrivateKey() }) {
-                    if vm.didCopyPrivateKey {
-                        Label("Copied!", systemImage: "checkmark")
-                    } else {
-                        Label("Copy Private Key", systemImage: "doc.on.doc")
-                    }
+                    Image(systemName: vm.didCopyPrivateKey ? "checkmark" : "doc.on.doc")
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
             }
