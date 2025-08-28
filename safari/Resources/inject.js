@@ -23,6 +23,7 @@
       this.removeListener = this.removeListener.bind(this);
       this.send = this.send.bind(this);
       this.sendAsync = this.sendAsync.bind(this);
+      this.enable = this.enable.bind(this);
     }
 
     // EIP-1193 request method
@@ -606,6 +607,14 @@
       );
       this.send(payload, callback);
     }
+
+    // Legacy enable method (deprecated, but needed for backwards compatibility)
+    async enable() {
+      console.warn(
+        "ethereum.enable() is deprecated. Use ethereum.request({ method: 'eth_requestAccounts' }) instead."
+      );
+      return this.request({ method: "eth_requestAccounts", params: [] });
+    }
   }
 
   // Create provider instance
@@ -648,7 +657,10 @@
 
   // Backwards compatibility - set as window.ethereum if none exists
   if (!window.ethereum) {
+    console.log("setting window.ethereum to provider");
     window.ethereum = provider;
+  } else {
+    console.log("window.ethereum already exists");
   }
 
   console.log("stupid wallet provider initialized with EIP-6963 support");
