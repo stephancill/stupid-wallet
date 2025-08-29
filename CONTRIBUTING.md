@@ -26,8 +26,8 @@ Thank you for your interest in contributing! This project is a stupid wallet app
     - EIP-6963 provider discovery: announces via `eip6963:announceProvider` and responds to `eip6963:requestProvider`.
     - Communicates with the extension via `window.postMessage` to avoid restricted APIs in the main world.
   - **Content script (isolated world)**: built bundle at `safari/Resources/dist/content.iife.js`
-    - Source lives in `web-ui/src/content.tsx` and is bundled via Vite.
-    - Bridges between the injected provider and the background service worker.
+    - Source lives in `web-ui/src/main.tsx` and is bundled via Vite.
+    - Bridges between the injected provider and the background service worker using `web-ui/src/bridge.ts` for fast methods and `web-ui/src/App.tsx` for UI flows.
     - Presents in-page modals using React + shadcn/ui (Credenza) mounted within a Shadow DOM for consented flows:
       - Connect (`eth_requestAccounts`)
       - Message signing (`personal_sign`)
@@ -71,11 +71,16 @@ Thank you for your interest in contributing! This project is a stupid wallet app
   - `safari/Resources/manifest.json`: MV3 manifest.
 
 - **Web UI (React/Vite)**
-  - `web-ui/src/content.tsx`: TypeScript content script entry (bridging + modal orchestration).
-  - `web-ui/src/shadowHost.ts`: Creates a Shadow DOM host, injects Tailwind, CSS variables and routes portals into the shadow root.
-  - `web-ui/src/components/ModalFrame.tsx`: Shared modal wrapper using shadcn/ui Credenza (Dialog/Drawer responsive).
-  - `web-ui/src/components/ui/*`: Generated shadcn/ui components (including `dialog`, `drawer`, `credenza`).
-  - `web-ui/src/index.css` and `web-ui/src/shadow.css`: Tailwind v4 layers and tokens (inlined into shadow root).
+  - `web-ui/src/main.tsx`: TypeScript content script entry point and Shadow DOM initialization.
+  - `web-ui/src/bridge.ts`: Lightweight bridge for fast EIP-1193 methods (accounts, chainId, blockNumber, chain switching).
+  - `web-ui/src/App.tsx`: React app component orchestrating modal flows and pending → confirm handshakes.
+  - `web-ui/src/shadowHost.ts`: Creates Shadow DOM host, injects Tailwind CSS, and manages portal routing.
+  - `web-ui/src/components/RequestModal.tsx`: Shared modal wrapper using shadcn/ui Credenza (responsive Dialog/Drawer).
+  - `web-ui/src/components/Providers.tsx`: React context providers (React Query client).
+  - `web-ui/src/components/*Modal.tsx`: Individual modal components for each wallet flow (Connect, SignMessage, SignTypedData, SendTx).
+  - `web-ui/src/components/ui/*`: Generated shadcn/ui components (button, dialog, drawer, credenza, skeleton, scroll-box).
+  - `web-ui/src/playground.tsx`: Development playground for testing modal components independently.
+  - `web-ui/src/index.css` and `web-ui/src/shadow.css`: Tailwind v4 styles and design tokens (inlined into shadow root).
   - Output directory is `safari/Resources/dist/` with file `content.iife.js`.
 
 ### Prerequisites
@@ -86,8 +91,8 @@ Thank you for your interest in contributing! This project is a stupid wallet app
   - Web3.swift (`Web3`, `Web3PromiseKit`)
   - PromiseKit
   - Dawn Key Management
-  - BigInt
 - Bun (for web-ui tooling) — `curl -fsSL https://bun.sh/install | bash`
+- Node.js 18+ (Bun provides faster builds and better TypeScript support for the web-ui)
 
 ### Local Setup
 
@@ -101,18 +106,26 @@ Thank you for your interest in contributing! This project is a stupid wallet app
   - In `SafariWebExtensionHandler.swift`: `appGroupId`.
   - In `shared/Constants.swift`: `Constants.accessGroup` — set to your Keychain Access Group and make sure the same group is present in both `ios-wallet/ios-wallet.entitlements` and `safari/safari.entitlements` under Keychain Sharing.
 
-- **Web UI setup (Vite + Tailwind + shadcn):**
+- **Web UI setup (Vite + Tailwind v4 + shadcn/ui):**
 
   ```bash
   cd web-ui
   bun install
-  # dev playground for components (optional)
+  # dev playground for testing modal components (optional)
   bun run dev
   # build the content script bundle to safari/Resources/dist/content.iife.js
   bun run build
   ```
 
-  The Xcode build picks up files under `safari/Resources/**`; rebuilding the web-ui updates the extension bundle.
+  **Development workflow:**
+
+  - The dev server runs on port 5173 and provides a playground at `index.html` for testing modal components independently
+  - Use `web-ui/src/playground.tsx` to interactively test Connect, Sign Message, Sign Typed Data, and Send Transaction modals
+  - The playground mounts modals in Shadow DOM just like the production extension
+  - Build output is automatically placed in `safari/Resources/dist/content.iife.js`
+  - Xcode build process includes a Run Script phase that runs `bun run build` automatically
+  - Files under `safari/Resources/**` are bundled into the Safari extension
+  - UI components follow shadcn/ui conventions (configured in `components.json` with "new-york" style and CSS variables)
 
 ### Build and Run
 
@@ -135,7 +148,7 @@ xcodebuild -scheme ios-wallet -configuration Debug -destination 'generic/platfor
 - **EIP‑1193 methods**
 
   - Injected provider: add a `case` handler in `inject.js` → route via postMessage.
-  - Content script: if the method requires user consent, implement a modal in `web-ui/src/components/*` and wire the pending → confirm flow in `web-ui/src/content.tsx`.
+  - Content script: if the method requires user consent, implement a modal in `web-ui/src/components/*` and wire the pending → confirm flow in `web-ui/src/App.tsx`.
   - Background: add a handler in `background.js` and forward to native if needed; for consented flows, send `{ pending: true }` first and handle `WALLET_CONFIRM`.
   - Native handler: implement the method in `SafariWebExtensionHandler.swift` and return `{ result }` or `{ error }`.
   - Update docs of supported methods below as needed.
@@ -152,8 +165,9 @@ xcodebuild -scheme ios-wallet -configuration Debug -destination 'generic/platfor
 
 - **Web UI / Modals**
   - Modals are React components using shadcn/ui Credenza (responsive Dialog/Drawer) and render inside a Shadow DOM.
-  - Edit `web-ui/src/components/ModalFrame.tsx` and specific modal components; ensure to keep `onOpenChange` rejecting on dismiss.
-  - Shadow DOM styling is isolated; tokens are provided via CSS variables injected in `shadowHost.ts`.
+  - Edit `web-ui/src/components/RequestModal.tsx` (shared wrapper) and specific modal components; ensure to keep `onOpenChange` rejecting on dismiss.
+  - Use `web-ui/src/playground.tsx` for development and testing of modal components.
+  - Shadow DOM styling is isolated; Tailwind v4 tokens are provided via CSS variables injected in `shadowHost.ts`.
 
 ### Security Considerations
 
