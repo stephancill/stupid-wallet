@@ -2,9 +2,18 @@ import path from "path";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import removeConsole from "vite-plugin-remove-console";
+
+const isDev = process.env.NODE_ENV === "development";
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    removeConsole({
+      includes: isDev ? ["log", "info", "debug"] : [],
+    }),
+  ],
   root: ".",
   define: {
     "process.env.NODE_ENV": JSON.stringify(
