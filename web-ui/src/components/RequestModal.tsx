@@ -75,6 +75,7 @@ export function RequestModal({
                   className="inline-flex items-center text-xs text-muted-foreground"
                   mono
                   noLink
+                  showEnsAvatar
                 />
               )}
             </div>
