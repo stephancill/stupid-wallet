@@ -388,7 +388,7 @@ struct ContentView: View {
                     Text("Address")
                         .font(.headline)
                     HStack(alignment: .center, spacing: 8) {
-                        profileImage(size: 24)
+                        profileImage(size: 32)
                         
                         VStack(alignment: .leading, spacing: 2) {
                             if let ensName = vm.ensName, !ensName.isEmpty {

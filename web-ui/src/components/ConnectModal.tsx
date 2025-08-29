@@ -64,7 +64,7 @@ export function ConnectModal({
                 Loading wallet address...
               </div>
             ) : walletAddress ? (
-              <Address address={walletAddress} mono showEnsAvatar />
+              <Address address={walletAddress} mono />
             ) : (
               <div className="text-muted-foreground">
                 No wallet address available

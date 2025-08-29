@@ -1,59 +1,71 @@
 import { useQuery } from "@tanstack/react-query";
-import { createPublicClient, http } from "viem";
-import { mainnet } from "viem/chains";
 
 export interface ENSData {
-	name: string | null;
-	avatar: string | null;
+  name: string | null;
+  avatar: string | null;
+}
+
+interface ENSApiResponse {
+  address: string;
+  ens?: string;
+  ens_primary?: string;
+  avatar?: string;
+  avatar_url?: string;
+  error?: boolean;
+  status?: number;
+  message?: string;
 }
 
 export function useENS(address?: string | null): {
-	data: ENSData | undefined;
-	isLoading: boolean;
-	error: Error | null;
+  data: ENSData | undefined;
+  isLoading: boolean;
+  error: Error | null;
 } {
-	const { data, isLoading, error } = useQuery({
-		queryKey: ["ens", address?.toLowerCase()],
-		queryFn: async (): Promise<ENSData> => {
-			if (!address || !address.startsWith("0x")) {
-				return { name: null, avatar: null };
-			}
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["ens", address?.toLowerCase()],
+    queryFn: async (): Promise<ENSData> => {
+      if (!address || !address.startsWith("0x")) {
+        return { name: null, avatar: null };
+      }
 
-			const client = createPublicClient({
-				chain: mainnet,
-				transport: http(),
-			});
+      try {
+        const response = await fetch(
+          `https://api.ensdata.net/${address.toLowerCase()}`
+        );
 
-			try {
-				const [name, avatar] = await Promise.all([
-					client.getEnsName({ address: address as `0x${string}` }),
-					client
-						.getEnsAvatar({ name: address as `0x${string}` })
-						.catch(() => null),
-				]);
+        if (!response.ok) {
+          return { name: null, avatar: null };
+        }
 
-				// If we got a name, try to get the avatar using the name
-				const finalAvatar =
-					name && !avatar
-						? await client.getEnsAvatar({ name }).catch(() => null)
-						: avatar;
+        const ensData: ENSApiResponse = await response.json();
 
-				return {
-					name,
-					avatar: finalAvatar,
-				};
-			} catch {
-				return { name: null, avatar: null };
-			}
-		},
-		enabled: Boolean(address?.startsWith("0x")),
-		staleTime: 5 * 60 * 1000, // 5 minutes
-		gcTime: 10 * 60 * 1000, // 10 minutes
-	});
+        // Check if the response indicates an error or no ENS
+        if (ensData.error || (!ensData.ens && !ensData.ens_primary)) {
+          return { name: null, avatar: null };
+        }
 
-	return {
-		data,
-		isLoading,
-		error: error as Error | null,
-	};
+        // Use ens_primary if available, otherwise fall back to ens
+        const name = ensData.ens_primary || ensData.ens || null;
+
+        // Use avatar_url if available, otherwise fall back to avatar
+        const avatar = ensData.avatar_url || ensData.avatar || null;
+
+        return {
+          name,
+          avatar,
+        };
+      } catch {
+        return { name: null, avatar: null };
+      }
+    },
+    enabled: Boolean(address?.startsWith("0x")),
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
+  });
+
+  return {
+    data,
+    isLoading,
+    error: error as Error | null,
+  };
 }

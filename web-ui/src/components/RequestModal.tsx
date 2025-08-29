@@ -72,10 +72,9 @@ export function RequestModal({
               {address && (
                 <Address
                   address={address}
-                  className="inline-flex items-center text-xs text-muted-foreground"
+                  className="inline-flex items-center text-xs"
                   mono
                   noLink
-                  showEnsAvatar
                 />
               )}
             </div>
