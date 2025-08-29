@@ -211,14 +211,7 @@ export function SendTxModal({
     className?: string,
     ens?: string | null
   ) => {
-    return (
-      <Address
-        address={address}
-        className={className}
-        mono
-        withEnsNameAbove={ens || undefined}
-      />
-    );
+    return <Address address={address} className={className} mono />;
   };
 
   const renderArgValue = (value: any, type?: string) => {
@@ -359,10 +352,7 @@ export function SendTxModal({
             <div className="text-sm break-all">
               <div>
                 {typeof to === "string" && to.startsWith("0x") ? (
-                  <Address
-                    address={to}
-                    withEnsNameAbove={names?.toName || undefined}
-                  />
+                  <Address address={to} />
                 ) : (
                   to
                 )}{" "}

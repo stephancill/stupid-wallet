@@ -169,14 +169,7 @@ export function SignTypedDataModal({
     className?: string,
     ens?: string | null
   ) => {
-    return (
-      <Address
-        address={address}
-        className={className}
-        mono
-        withEnsNameAbove={ens || undefined}
-      />
-    );
+    return <Address address={address} className={className} mono />;
   };
 
   const renderArgValue = (value: any, type?: string) => {
@@ -314,7 +307,6 @@ export function SignTypedDataModal({
                               address={addr}
                               className="font-mono"
                               mono
-                              withEnsNameAbove={name}
                             />
                           );
                         }

@@ -1,13 +1,12 @@
-import React from "react";
-import { createIcon } from "@download/blockies";
-import { ExternalLink } from "lucide-react";
+import { useAvatar } from "@/hooks/use-avatar";
 import { cn } from "@/lib/utils";
+import { ExternalLink } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type AddressProps = {
   address: string;
   className?: string;
   mono?: boolean;
-  withEnsNameAbove?: string | null;
   noLink?: boolean;
 };
 
@@ -21,38 +20,38 @@ export function Address({
   address,
   className,
   mono,
-  withEnsNameAbove,
   noLink = false,
 }: AddressProps) {
-  const ref = React.useRef<HTMLSpanElement | null>(null);
+  const { avatarUrl, ensName, isLoading } = useAvatar(address);
 
-  React.useEffect(() => {
-    if (!address || typeof address !== "string" || !address.startsWith("0x"))
-      return;
-    const canvas = createIcon({
-      seed: address.toLowerCase(),
-      size: 6,
-      scale: 3,
-    });
-    canvas.style.borderRadius = "4px";
-    canvas.style.flex = "0 0 auto";
-    const host = ref.current;
-    if (host) {
-      // Clear previous icon on rerenders
-      while (host.firstChild) host.removeChild(host.firstChild);
-      host.appendChild(canvas);
-    }
-    return () => {
-      if (host && canvas && canvas.parentNode === host)
-        host.removeChild(canvas);
-    };
-  }, [address]);
+  const avatarElement = avatarUrl ? (
+    <img
+      src={avatarUrl}
+      alt={`${ensName || address} avatar`}
+      className="w-[18px] h-[18px] rounded border border-gray-200 flex-shrink-0"
+    />
+  ) : null;
+
+  // Show skeleton while loading ENS name
+  if (isLoading) {
+    return (
+      <div className={cn("inline-flex items-center gap-2", className)}>
+        {avatarElement}
+        <Skeleton className="h-4 w-24" />
+      </div>
+    );
+  }
+
+  const displayText = ensName || truncateMiddle(address);
+  const shouldUseMono = mono && !ensName;
 
   const content = noLink ? (
     <span className={cn("inline-flex items-center gap-2", className)}>
-      <span ref={ref} aria-hidden="true" />
-      <span className={cn(mono ? "font-mono" : undefined, "break-all")}>
-        {truncateMiddle(address)}
+      {avatarElement}
+      <span
+        className={cn(shouldUseMono ? "font-mono" : undefined, "break-all")}
+      >
+        {displayText}
       </span>
     </span>
   ) : (
@@ -62,29 +61,15 @@ export function Address({
       rel="noopener noreferrer"
       className={cn("inline-flex items-center gap-2", className)}
     >
-      <span ref={ref} aria-hidden="true" />
-      <span className={cn(mono ? "font-mono" : undefined, "break-all")}>
-        {truncateMiddle(address)}
+      {avatarElement}
+      <span
+        className={cn(shouldUseMono ? "font-mono" : undefined, "break-all")}
+      >
+        {displayText}
       </span>
       <ExternalLink className="h-3 w-3 opacity-60 flex-shrink-0" />
     </a>
   );
-
-  if (withEnsNameAbove) {
-    return (
-      <div>
-        <div className="text-foreground">{withEnsNameAbove}</div>
-        <div
-          className={cn(
-            mono ? "font-mono" : undefined,
-            "text-muted-foreground break-all"
-          )}
-        >
-          {content}
-        </div>
-      </div>
-    );
-  }
 
   return content;
 }

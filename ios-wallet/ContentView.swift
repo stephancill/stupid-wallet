@@ -48,6 +48,10 @@ final class WalletViewModel: ObservableObject {
     @Published var privateKeyError: String?
     @Published var didCopyPrivateKey: Bool = false
 
+    // ENS properties
+    @Published var ensName: String?
+    @Published var ensAvatarURL: String?
+
     init() {
         loadPersistedAddress()
         biometryAvailable = isBiometrySupported()
@@ -58,7 +62,10 @@ final class WalletViewModel: ObservableObject {
                 _ = KeyManagement.preflightAuthentication(addressHex: addressHex)
             }
         if hasWallet {
-            Task { await refreshAllBalances() }
+            Task { 
+                await refreshAllBalances()
+                await resolveENS()
+            }
         }
     }
 
@@ -128,7 +135,10 @@ final class WalletViewModel: ObservableObject {
             } else {
                 print("[Wallet] ERROR: Could not open app group defaults to save address")
             }
-            Task { await refreshAllBalances() }
+            Task { 
+                await refreshAllBalances()
+                await resolveENS()
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -149,7 +159,10 @@ final class WalletViewModel: ObservableObject {
             } else {
                 print("[Wallet] ERROR: Could not open app group defaults to save new wallet")
             }
-            Task { await refreshAllBalances() }
+            Task { 
+                await refreshAllBalances()
+                await resolveENS()
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -167,6 +180,8 @@ final class WalletViewModel: ObservableObject {
         addressHex = ""
         hasWallet = false
         balances.removeAll()
+        ensName = nil
+        ensAvatarURL = nil
         errorMessage = nil
     }
 
@@ -239,6 +254,17 @@ final class WalletViewModel: ObservableObject {
         let decimals = String(remainderStr.prefix(6))
         return "\(integer).\(decimals) ETH"
     }
+
+    @MainActor
+    func resolveENS() async {
+        guard !addressHex.isEmpty else { return }
+        
+        let ensData = await ENSService.shared.resolveENS(for: addressHex)
+        ensName = ensData?.ens
+        ensAvatarURL = ensData?.avatar
+    }
+    
+
 }
 
 private extension String {
@@ -262,6 +288,43 @@ struct ContentView: View {
         guard let uiImage = blockies.createImage() else { return nil }
 
         return Image(uiImage: uiImage)
+    }
+
+    // Profile image view that shows ENS avatar or falls back to blockies
+    @ViewBuilder
+    private func profileImage(size: CGFloat = 24) -> some View {
+        if let avatarURL = vm.ensAvatarURL, let url = URL(string: avatarURL) {
+            AsyncImage(url: url) { image in
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } placeholder: {
+                if let blockies = blockiesImage(for: vm.addressHex, size: size) {
+                    blockies
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.gray.opacity(0.3))
+                }
+            }
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+            )
+        } else if let blockies = blockiesImage(for: vm.addressHex, size: size) {
+            blockies
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                )
+        }
     }
 
     // Truncate address to show first and last 4 characters
@@ -325,21 +388,21 @@ struct ContentView: View {
                     Text("Address")
                         .font(.headline)
                     HStack(alignment: .center, spacing: 8) {
-                        if let blockies = blockiesImage(for: vm.addressHex, size: 24) {
-                            blockies
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 24, height: 24)
-                                .cornerRadius(4)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                                )
+                        profileImage(size: 32)
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            if let ensName = vm.ensName, !ensName.isEmpty {
+                                Text(ensName)
+                                    .font(.system(.body, design: .default))
+                                    .foregroundColor(.primary)
+                                Text(truncatedAddress(vm.addressHex))
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Text(truncatedAddress(vm.addressHex))
+                                    .font(.system(.footnote, design: .monospaced))
+                            }
                         }
-                        Text(truncatedAddress(vm.addressHex))
-                            .font(.system(.footnote, design: .monospaced))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
                         Spacer()
                         Button(action: {
                             UIPasteboard.general.string = vm.addressHex
@@ -377,6 +440,8 @@ struct ContentView: View {
                         }
                         Spacer()
                     }
+                    
+
 
                     HStack {
                         Button(role: .destructive, action: { showClearWalletConfirmation = true }) {
@@ -408,6 +473,7 @@ struct ContentView: View {
         }
         .refreshable {
             await vm.refreshAllBalances()
+            await vm.resolveENS()
         }
     }
 
