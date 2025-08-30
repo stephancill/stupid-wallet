@@ -11,7 +11,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     removeConsole({
-      includes: isDev ? ["log", "info", "debug"] : [],
+      includes: !isDev ? ["log", "info", "debug"] : [],
     }),
   ],
   root: ".",

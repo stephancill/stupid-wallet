@@ -63,6 +63,8 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         switch method {
         case "eth_requestAccounts":
             return handleRequestAccounts()
+        case "wallet_connect":
+            return handleWalletConnect()
         case "eth_accounts":
             return handleAccounts()
         case "eth_chainId":
@@ -138,6 +140,18 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         if let address = address {
             logger.info("Returning address for eth_requestAccounts: \(address)")
             return ["result": [address]]
+        } else {
+            logger.info("No address found, returning empty array")
+            return ["result": []]
+        }
+    }
+
+    // TODO: Handle capabilities e.g. SIWE
+    private func handleWalletConnect() -> [String: Any] {
+        let address = getSavedAddress()
+        if let address = address {
+            logger.info("Returning address for wallet_connect: \(address)")
+            return ["result": ["accounts": [["address": address]]]]
         } else {
             logger.info("No address found, returning empty array")
             return ["result": []]

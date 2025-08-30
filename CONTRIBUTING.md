@@ -79,7 +79,6 @@ Thank you for your interest in contributing! This project is a stupid wallet app
   - `web-ui/src/components/Providers.tsx`: React context providers (React Query client).
   - `web-ui/src/components/*Modal.tsx`: Individual modal components for each wallet flow (Connect, SignMessage, SignTypedData, SendTx).
   - `web-ui/src/components/ui/*`: Generated shadcn/ui components (button, dialog, drawer, credenza, skeleton, scroll-box).
-  - `web-ui/src/playground.tsx`: Development playground for testing modal components independently.
   - `web-ui/src/index.css` and `web-ui/src/shadow.css`: Tailwind v4 styles and design tokens (inlined into shadow root).
   - Output directory is `safari/Resources/dist/` with file `content.iife.js`.
 
@@ -120,8 +119,6 @@ Thank you for your interest in contributing! This project is a stupid wallet app
   **Development workflow:**
 
   - The dev server runs on port 5173 and provides a playground at `index.html` for testing modal components independently
-  - Use `web-ui/src/playground.tsx` to interactively test Connect, Sign Message, Sign Typed Data, and Send Transaction modals
-  - The playground mounts modals in Shadow DOM just like the production extension
   - Build output is automatically placed in `safari/Resources/dist/content.iife.js`
   - Xcode build process includes a Run Script phase that runs `bun run build` automatically
   - Files under `safari/Resources/**` are bundled into the Safari extension
@@ -166,7 +163,6 @@ xcodebuild -scheme ios-wallet -configuration Debug -destination 'generic/platfor
 - **Web UI / Modals**
   - Modals are React components using shadcn/ui Credenza (responsive Dialog/Drawer) and render inside a Shadow DOM.
   - Edit `web-ui/src/components/RequestModal.tsx` (shared wrapper) and specific modal components; ensure to keep `onOpenChange` rejecting on dismiss.
-  - Use `web-ui/src/playground.tsx` for development and testing of modal components.
   - Shadow DOM styling is isolated; Tailwind v4 tokens are provided via CSS variables injected in `shadowHost.ts`.
 
 ### Security Considerations

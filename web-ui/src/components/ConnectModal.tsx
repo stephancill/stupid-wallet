@@ -5,14 +5,14 @@ import { RequestModal } from "@/components/RequestModal";
 
 type ConnectModalProps = {
   host: string;
-  address?: string;
+  capabilities?: any;
   onApprove: () => void;
   onReject: () => void;
 };
 
 export function ConnectModal({
   host,
-  address: providedAddress,
+  capabilities,
   onApprove,
   onReject,
 }: ConnectModalProps) {
@@ -29,10 +29,9 @@ export function ConnectModal({
         });
       return result || [];
     },
-    enabled: !providedAddress,
   });
 
-  const walletAddress = providedAddress || accounts?.[0];
+  const walletAddress = accounts?.[0];
 
   const handleApprove = async () => {
     try {
@@ -52,14 +51,14 @@ export function ConnectModal({
     >
       <div className="space-y-4 text-sm">
         <div>This site wants to connect to your wallet.</div>
-        <div className="grid grid-cols-[60px_1fr] gap-x-3 gap-y-2">
+        <div className="grid grid-cols-[80px_1fr] gap-x-3 gap-y-2">
           <div className="text-muted-foreground">Site</div>
           <div className="break-all">
             <strong className="text-foreground">{host}</strong>
           </div>
           <div className="text-muted-foreground">Wallet</div>
           <div className="break-all">
-            {isAccountsLoading && !providedAddress ? (
+            {isAccountsLoading ? (
               <div className="text-muted-foreground">
                 Loading wallet address...
               </div>
@@ -71,6 +70,16 @@ export function ConnectModal({
               </div>
             )}
           </div>
+          {capabilities && (
+            <>
+              <div className="text-muted-foreground">Capabilities</div>
+              <div className="break-all">
+                <strong className="text-foreground">
+                  {Object.keys(capabilities).join(", ")}
+                </strong>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </RequestModal>

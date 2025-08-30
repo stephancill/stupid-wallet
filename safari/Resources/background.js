@@ -24,65 +24,27 @@ async function handleWalletRequest(message, sender, sendResponse) {
 
   try {
     switch (method) {
-      case "eth_requestAccounts": {
-        sendResponse({ pending: true });
-        break;
-      }
-      case "eth_accounts": {
-        await handleAccounts(sendResponse);
-        break;
-      }
-      case "eth_chainId": {
-        const native = await callNative({ method: "eth_chainId", params: [] });
-        if (native && native.result)
-          return sendResponse({ result: native.result });
-        if (native && native.error)
-          return sendResponse({ error: native.error });
-        return sendResponse({ result: "0x1" });
-      }
-      case "eth_blockNumber": {
-        const native = await callNative({
-          method: "eth_blockNumber",
-          params: [],
-        });
-        if (native && native.result)
-          return sendResponse({ result: native.result });
-        if (native && native.error)
-          return sendResponse({ error: native.error });
-        return sendResponse({ error: "Failed to get block number" });
-      }
-      case "wallet_addEthereumChain": {
-        const native = await callNative({
-          method: "wallet_addEthereumChain",
-          params,
-        });
-        if (native && native.result)
-          return sendResponse({ result: native.result });
-        if (native && native.error)
-          return sendResponse({ error: native.error });
-        return sendResponse({ error: "Failed to add chain" });
-      }
+      // Fast methods - confirmation not required
+      case "eth_accounts":
+      case "eth_chainId":
+      case "eth_blockNumber":
+      case "wallet_addEthereumChain":
       case "wallet_switchEthereumChain": {
         const native = await callNative({
-          method: "wallet_switchEthereumChain",
+          method,
           params,
         });
         if (native && native.result)
           return sendResponse({ result: native.result });
         if (native && native.error)
           return sendResponse({ error: native.error });
-        return sendResponse({ error: "Failed to switch chain" });
+        return sendResponse({ error: "Request failed" });
       }
-      case "eth_signTypedData_v4": {
-        // Show in-page modal first; complete after approval
-        sendResponse({ pending: true });
-        break;
-      }
-      case "personal_sign": {
-        // Show in-page modal first; complete after approval
-        sendResponse({ pending: true });
-        break;
-      }
+      // Methods that require confirmation
+      case "eth_requestAccounts":
+      case "wallet_connect":
+      case "eth_signTypedData_v4":
+      case "personal_sign":
       case "eth_sendTransaction": {
         // Show in-page modal first; complete after approval
         sendResponse({ pending: true });
@@ -107,77 +69,16 @@ async function handleWalletConfirm(message, sendResponse) {
   }
 
   try {
-    if (method === "eth_requestAccounts") {
-      const native = await callNative({
-        method: "eth_requestAccounts",
-        params: [],
-      });
-      if (native && native.result)
-        return sendResponse({ result: native.result });
-      if (native && native.error) return sendResponse({ error: native.error });
-      return sendResponse({ result: [] });
-    }
-
-    if (method === "personal_sign") {
-      const native = await callNative({
-        method: "personal_sign",
-        params: params || [],
-      });
-      if (native && native.result)
-        return sendResponse({ result: native.result });
-      if (native && native.error) return sendResponse({ error: native.error });
-      return sendResponse({ error: "Signing failed" });
-    }
-
-    if (method === "eth_signTypedData_v4") {
-      const native = await callNative({
-        method: "eth_signTypedData_v4",
-        params: params || [],
-      });
-      if (native && native.result)
-        return sendResponse({ result: native.result });
-      if (native && native.error) return sendResponse({ error: native.error });
-      return sendResponse({ error: "Signing failed" });
-    }
-
-    if (method === "eth_sendTransaction") {
-      const native = await callNative({
-        method: "eth_sendTransaction",
-        params: params || [],
-      });
-      if (native && native.result)
-        return sendResponse({ result: native.result });
-      if (native && native.error) return sendResponse({ error: native.error });
-      return sendResponse({ error: "Transaction failed" });
-    }
-
-    return sendResponse({ error: `Unsupported confirm method ${method}` });
+    const native = await callNative({
+      method,
+      params,
+    });
+    if (native && native.result) return sendResponse({ result: native.result });
+    if (native && native.error) return sendResponse({ error: native.error });
+    return sendResponse({ error: "Signing failed" });
   } catch (error) {
     console.error("Error confirming:", error);
     sendResponse({ error: "Failed to confirm request" });
-  }
-}
-
-async function handleAccounts(sendResponse) {
-  try {
-    const native = await callNative({
-      method: "eth_accounts",
-      params: [],
-    });
-
-    if (native && native.result) {
-      console.log("Returning accounts (native):", native.result);
-      sendResponse({ result: native.result });
-    } else if (native && native.error) {
-      console.error("Native handler error:", native.error);
-      sendResponse({ error: native.error });
-    } else {
-      console.log("No accounts found");
-      sendResponse({ result: [] });
-    }
-  } catch (error) {
-    console.error("Error getting accounts:", error);
-    sendResponse({ error: "Failed to get accounts" });
   }
 }
 

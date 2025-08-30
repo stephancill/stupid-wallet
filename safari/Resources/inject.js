@@ -32,7 +32,8 @@
 
       switch (method) {
         case "eth_requestAccounts":
-          return this._requestAccounts();
+        case "wallet_connect":
+          return this._requestAccounts({ method, params });
 
         case "eth_accounts":
           return this._getAccounts();
@@ -40,88 +41,22 @@
         case "eth_chainId":
           return this._fetchChainId();
 
-        case "eth_blockNumber":
-          return this._blockNumber();
-
-        case "wallet_addEthereumChain": {
-          if (!params || !params[0] || typeof params[0] !== "object") {
-            throw new Error("Invalid wallet_addEthereumChain params");
-          }
-          return this._addEthereumChain(params[0]);
-        }
-
         case "wallet_switchEthereumChain": {
           const p = params && params[0];
           const chainId = p && p.chainId;
           if (typeof chainId !== "string") {
             throw new Error("Invalid wallet_switchEthereumChain params");
           }
+          // TODO: Refactor these helpers
           return this._switchEthereumChain(chainId);
         }
 
-        case "eth_signTypedData_v4": {
-          if (!params || params.length < 2) {
-            throw new Error("Invalid eth_signTypedData_v4 params");
-          }
-          // Normalize params: prefer [address, typedDataJSON]
-          let address, typedDataJSON;
-          const p0 = params[0];
-          const p1 = params[1];
-          if (typeof p0 === "string" && typeof p1 === "string") {
-            // Either [address, json] or [json, address]
-            if (p0.startsWith("0x")) {
-              address = p0;
-              typedDataJSON = p1;
-            } else if (p1.startsWith("0x")) {
-              address = p1;
-              typedDataJSON = p0;
-            } else {
-              // Fallback assume [address, json]
-              address = p0;
-              typedDataJSON = p1;
-            }
-          } else {
-            address = p0;
-            typedDataJSON = p1;
-          }
-          return this._signTypedDataV4(address, typedDataJSON);
-        }
-
-        case "eth_sendTransaction": {
-          if (!params || params.length < 1 || typeof params[0] !== "object") {
-            throw new Error("Invalid eth_sendTransaction params");
-          }
-          const tx = params[0] || {};
-          return this._sendTransaction(tx);
-        }
-
-        case "personal_sign": {
-          if (!params || params.length < 2) {
-            throw new Error("Invalid personal_sign params");
-          }
-          let messageHex, address;
-          const p0 = params[0];
-          const p1 = params[1];
-          if (
-            typeof p0 === "string" &&
-            p0.startsWith("0x") &&
-            typeof p1 === "string"
-          ) {
-            messageHex = p0;
-            address = p1;
-          } else if (
-            typeof p1 === "string" &&
-            p1.startsWith("0x") &&
-            typeof p0 === "string"
-          ) {
-            messageHex = p1;
-            address = p0;
-          } else {
-            messageHex = p0;
-            address = p1;
-          }
-          return this._personalSign(messageHex, address);
-        }
+        case "eth_blockNumber":
+        case "wallet_addEthereumChain":
+        case "eth_signTypedData_v4":
+        case "eth_sendTransaction":
+        case "personal_sign":
+          return this._handleRequest({ method, params });
 
         case "eth_getBlockByNumber":
         case "eth_getBalance":
@@ -130,7 +65,6 @@
         case "eth_signTypedData":
         case "eth_signTypedData_v1":
         case "eth_signTypedData_v3":
-          // eth_signTypedData_v4 and eth_sendTransaction handled above
           throw new Error(`Method ${method} not implemented yet`);
 
         default:
@@ -139,7 +73,7 @@
     }
 
     // Request accounts from the wallet
-    async _requestAccounts() {
+    async _requestAccounts({ method, params }) {
       return new Promise((resolve, reject) => {
         const requestId = this._generateRequestId();
 
@@ -155,6 +89,8 @@
           }
 
           const response = event.data.response;
+
+          console.log("wallet_connect response", response);
 
           // Ignore interim pending responses if any (content doesn't forward them)
           if (response && response.pending) {
@@ -172,14 +108,21 @@
             return;
           }
 
-          this.accounts = response.result || [];
+          this.accounts = (response.result?.accounts || []).map(
+            (account) => account.address
+          );
           this.selectedAddress = this.accounts[0] || null;
           this.isConnected = this.accounts.length > 0;
 
           // Emit accountsChanged event
           this._emit("accountsChanged", this.accounts);
 
-          resolve(this.accounts);
+          if (method === "eth_requestAccounts") {
+            // eth_requestAccounts expects an array of addresses
+            resolve(this.accounts);
+          } else {
+            resolve(response.result);
+          }
         };
 
         // Add listener for response
@@ -189,8 +132,8 @@
         window.postMessage(
           {
             source: "stupid-wallet-inject",
-            method: "eth_requestAccounts",
-            params: [],
+            method: "wallet_connect",
+            params: params || [],
             requestId: requestId,
           },
           "*"
@@ -256,51 +199,6 @@
       });
     }
 
-    // personal_sign helper
-    async _personalSign(messageHex, address) {
-      return new Promise((resolve, reject) => {
-        const requestId = this._generateRequestId();
-
-        const responseHandler = (event) => {
-          if (
-            event.source !== window ||
-            !event.data ||
-            event.data.source !== "stupid-wallet-content" ||
-            event.data.requestId !== requestId
-          ) {
-            return;
-          }
-
-          const response = event.data.response;
-          window.removeEventListener("message", responseHandler);
-
-          if (response && response.error) {
-            reject(new Error(response.error));
-            return;
-          }
-
-          resolve(response && response.result);
-        };
-
-        window.addEventListener("message", responseHandler);
-
-        window.postMessage(
-          {
-            source: "stupid-wallet-inject",
-            method: "personal_sign",
-            params: [messageHex, address],
-            requestId,
-          },
-          "*"
-        );
-
-        setTimeout(() => {
-          window.removeEventListener("message", responseHandler);
-          reject(new Error("Request timeout"));
-        }, 45000);
-      });
-    }
-
     async _fetchChainId() {
       return new Promise((resolve, reject) => {
         const requestId = this._generateRequestId();
@@ -339,43 +237,6 @@
           window.removeEventListener("message", responseHandler);
           resolve(this.chainId);
         }, 8000);
-      });
-    }
-
-    async _blockNumber() {
-      return new Promise((resolve, reject) => {
-        const requestId = this._generateRequestId();
-        const responseHandler = (event) => {
-          if (
-            event.source !== window ||
-            !event.data ||
-            event.data.source !== "stupid-wallet-content" ||
-            event.data.requestId !== requestId
-          ) {
-            return;
-          }
-          const response = event.data.response;
-          window.removeEventListener("message", responseHandler);
-          if (response && response.error) {
-            reject(new Error(response.error));
-            return;
-          }
-          resolve(response && response.result);
-        };
-        window.addEventListener("message", responseHandler);
-        window.postMessage(
-          {
-            source: "stupid-wallet-inject",
-            method: "eth_blockNumber",
-            params: [],
-            requestId,
-          },
-          "*"
-        );
-        setTimeout(() => {
-          window.removeEventListener("message", responseHandler);
-          reject(new Error("Request timeout"));
-        }, 10000);
       });
     }
 
@@ -454,8 +315,7 @@
       });
     }
 
-    // eth_signTypedData_v4 helper
-    async _signTypedDataV4(address, typedDataJSON) {
+    async _handleRequest({ method, params }) {
       return new Promise((resolve, reject) => {
         const requestId = this._generateRequestId();
 
@@ -485,53 +345,8 @@
         window.postMessage(
           {
             source: "stupid-wallet-inject",
-            method: "eth_signTypedData_v4",
-            params: [address, typedDataJSON],
-            requestId,
-          },
-          "*"
-        );
-
-        setTimeout(() => {
-          window.removeEventListener("message", responseHandler);
-          reject(new Error("Request timeout"));
-        }, 45000);
-      });
-    }
-
-    // eth_sendTransaction helper
-    async _sendTransaction(tx) {
-      return new Promise((resolve, reject) => {
-        const requestId = this._generateRequestId();
-
-        const responseHandler = (event) => {
-          if (
-            event.source !== window ||
-            !event.data ||
-            event.data.source !== "stupid-wallet-content" ||
-            event.data.requestId !== requestId
-          ) {
-            return;
-          }
-
-          const response = event.data.response;
-          window.removeEventListener("message", responseHandler);
-
-          if (response && response.error) {
-            reject(new Error(response.error));
-            return;
-          }
-
-          resolve(response && response.result);
-        };
-
-        window.addEventListener("message", responseHandler);
-
-        window.postMessage(
-          {
-            source: "stupid-wallet-inject",
-            method: "eth_sendTransaction",
-            params: [tx],
+            method,
+            params,
             requestId,
           },
           "*"
@@ -622,7 +437,7 @@
 
   // Add additional properties for compatibility
   provider.isMetaMask = false; // Explicitly set to false to avoid confusion
-  provider.isIOSWallet = true; // Custom identifier
+  provider.isStupid = true; // Custom identifier
   provider._metamask = undefined; // Ensure this doesn't exist
 
   // EIP-6963 Provider Info
