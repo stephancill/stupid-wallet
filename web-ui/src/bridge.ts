@@ -1,19 +1,7 @@
 // Lightweight content bridge that initializes at document_start
 // Handles non-UI EIP-1193 requests immediately so autoConnect is fast
 
-const FAST_METHODS = new Set<
-  | "eth_accounts"
-  | "eth_chainId"
-  | "eth_blockNumber"
-  | "wallet_addEthereumChain"
-  | "wallet_switchEthereumChain"
->([
-  "eth_accounts",
-  "eth_chainId",
-  "eth_blockNumber",
-  "wallet_addEthereumChain",
-  "wallet_switchEthereumChain",
-]);
+import { FAST_METHODS } from "./lib/constants";
 
 const DEBUG_PREFIX = "[stupid-wallet-content]";
 function debugLog(...args: any[]) {
@@ -47,7 +35,7 @@ function handleWindowMessage(event: MessageEvent) {
 
   debugLog("handleWindowMessage", { method, params, requestId });
 
-  if (!FAST_METHODS.has(method as any)) {
+  if (!FAST_METHODS.includes(method as any)) {
     debugLog("delegating to UI flow", { method, requestId });
     return; // UI flows are handled by the React app
   }

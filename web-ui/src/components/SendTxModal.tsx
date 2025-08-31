@@ -2,7 +2,7 @@ import Address from "@/components/Address";
 import { Skeleton } from "@/components/ui/skeleton";
 import { whatsabi } from "@shazow/whatsabi";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +16,7 @@ import {
 } from "viem";
 import * as chains from "viem/chains";
 import { RequestModal } from "@/components/RequestModal";
+import { cn } from "@/lib/utils";
 
 function stringifyWithBigInt(value: unknown) {
   return JSON.stringify(
@@ -46,6 +47,11 @@ export function SendTxModal({
   const valueEth = useMemo(() => {
     return isHex(rawValue) ? formatEther(hexToBigInt(rawValue)) : "0";
   }, [rawValue]);
+  const [showMoreDecoded, setShowMoreDecoded] = useState(false);
+
+  useEffect(() => {
+    console.log("tx", tx);
+  }, [tx]);
 
   const {
     data: chainId,
@@ -427,9 +433,24 @@ export function SendTxModal({
                 </div>
               </>
             ) : (
-              <pre className="whitespace-pre-wrap font-mono text-muted-foreground text-[10px] break-words">
-                {dataHex}
-              </pre>
+              <div>
+                <pre
+                  className={cn(
+                    "whitespace-pre-wrap font-mono text-muted-foreground break-words",
+                    !showMoreDecoded && "line-clamp-2"
+                  )}
+                >
+                  {dataHex}
+                </pre>
+                <div>
+                  <button
+                    className="hover:underline text-blue-500"
+                    onClick={() => setShowMoreDecoded(!showMoreDecoded)}
+                  >
+                    {showMoreDecoded ? "Show less" : "Show more"}
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </div>

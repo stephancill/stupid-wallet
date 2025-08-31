@@ -3,6 +3,25 @@
 
 const NATIVE_APP_ID = "co.za.stephancill.stupid-wallet"; // Bundle ID of containing app
 
+// Store site metadata for pending requests so it can be accessed during confirmation
+const pendingRequests = new Map();
+
+// Clean up old pending requests to prevent memory leaks
+function cleanupOldRequests() {
+  const now = Date.now();
+  const timeout = 5 * 60 * 1000; // 5 minutes timeout
+
+  for (const [requestId, metadata] of pendingRequests.entries()) {
+    if (metadata.timestamp && now - metadata.timestamp > timeout) {
+      console.log(`Cleaning up expired request: ${requestId}`);
+      pendingRequests.delete(requestId);
+    }
+  }
+}
+
+// Run cleanup every 2 minutes
+setInterval(cleanupOldRequests, 2 * 60 * 1000);
+
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log("Background received message:", message);
 
@@ -18,71 +37,82 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function handleWalletRequest(message, sender, sendResponse) {
-  const { method, params } = message;
+  const { method, params, requestId } = message;
 
   console.log("Background received wallet request:", method, params);
 
+  // Extract site metadata from sender
+  let siteMetadata = {};
+  try {
+    if (sender && sender.tab && sender.tab.url) {
+      const tab = sender.tab;
+      const url = new URL(tab.url);
+      siteMetadata = {
+        url: tab.url,
+        domain: url.hostname,
+        scheme: url.protocol.replace(":", ""),
+        origin: url.origin,
+      };
+    } else if (sender && sender.url) {
+      const url = new URL(sender.url);
+      siteMetadata = {
+        url: sender.url,
+        domain: url.hostname,
+        scheme: url.protocol.replace(":", ""),
+        origin: url.origin,
+      };
+    } else if (sender && sender.frameUrl) {
+      // Handle iframe scenarios
+      const url = new URL(sender.frameUrl);
+      siteMetadata = {
+        url: sender.frameUrl,
+        domain: url.hostname,
+        scheme: url.protocol.replace(":", ""),
+        origin: url.origin,
+      };
+    } else {
+      // If no direct URL info, leave siteMetadata empty and let native handler handle fallback
+      console.warn("No direct URL information available in sender");
+    }
+  } catch (error) {
+    console.warn("Failed to extract site metadata:", error);
+  }
+
+  console.log("Site metadata:", siteMetadata);
+
+  // Store site metadata for this request so it can be accessed during confirmation
+  if (requestId) {
+    pendingRequests.set(requestId, {
+      ...siteMetadata,
+      timestamp: Date.now(),
+    });
+  }
+
   try {
     switch (method) {
-      case "eth_requestAccounts": {
-        sendResponse({ pending: true });
-        break;
-      }
-      case "eth_accounts": {
-        await handleAccounts(sendResponse);
-        break;
-      }
-      case "eth_chainId": {
-        const native = await callNative({ method: "eth_chainId", params: [] });
-        if (native && native.result)
-          return sendResponse({ result: native.result });
-        if (native && native.error)
-          return sendResponse({ error: native.error });
-        return sendResponse({ result: "0x1" });
-      }
-      case "eth_blockNumber": {
+      // Fast methods - confirmation not required
+      case "eth_accounts":
+      case "eth_chainId":
+      case "eth_blockNumber":
+      case "wallet_addEthereumChain":
+      case "wallet_switchEthereumChain":
+      case "wallet_disconnect": {
         const native = await callNative({
-          method: "eth_blockNumber",
-          params: [],
-        });
-        if (native && native.result)
-          return sendResponse({ result: native.result });
-        if (native && native.error)
-          return sendResponse({ error: native.error });
-        return sendResponse({ error: "Failed to get block number" });
-      }
-      case "wallet_addEthereumChain": {
-        const native = await callNative({
-          method: "wallet_addEthereumChain",
+          method,
           params,
+          siteMetadata,
         });
         if (native && native.result)
           return sendResponse({ result: native.result });
         if (native && native.error)
           return sendResponse({ error: native.error });
-        return sendResponse({ error: "Failed to add chain" });
+        return sendResponse({ error: "Request failed" });
       }
-      case "wallet_switchEthereumChain": {
-        const native = await callNative({
-          method: "wallet_switchEthereumChain",
-          params,
-        });
-        if (native && native.result)
-          return sendResponse({ result: native.result });
-        if (native && native.error)
-          return sendResponse({ error: native.error });
-        return sendResponse({ error: "Failed to switch chain" });
-      }
-      case "eth_signTypedData_v4": {
-        // Show in-page modal first; complete after approval
-        sendResponse({ pending: true });
-        break;
-      }
-      case "personal_sign": {
-        // Show in-page modal first; complete after approval
-        sendResponse({ pending: true });
-        break;
-      }
+      // Methods that require confirmation
+      case "eth_requestAccounts":
+      case "wallet_connect":
+      case "eth_signTypedData_v4":
+      case "personal_sign":
       case "eth_sendTransaction": {
         // Show in-page modal first; complete after approval
         sendResponse({ pending: true });
@@ -98,86 +128,56 @@ async function handleWalletRequest(message, sender, sendResponse) {
 }
 
 async function handleWalletConfirm(message, sendResponse) {
-  const { approved, method, params } = message;
+  const { approved, method, params, requestId } = message;
   console.log("Handling WALLET_CONFIRM:", approved, method, params);
 
   if (!approved) {
+    // Clean up stored metadata on rejection
+    if (requestId) {
+      pendingRequests.delete(requestId);
+    }
     sendResponse({ error: "User rejected the request" });
     return;
   }
 
-  try {
-    if (method === "eth_requestAccounts") {
-      const native = await callNative({
-        method: "eth_requestAccounts",
-        params: [],
-      });
-      if (native && native.result)
-        return sendResponse({ result: native.result });
-      if (native && native.error) return sendResponse({ error: native.error });
-      return sendResponse({ result: [] });
-    }
+  // Retrieve stored site metadata for this request
+  const storedData = requestId ? pendingRequests.get(requestId) : null;
+  const siteMetadata =
+    storedData && typeof storedData === "object" ? storedData : {};
+  console.log("Retrieved site metadata for confirmation:", siteMetadata);
 
-    if (method === "personal_sign") {
-      const native = await callNative({
-        method: "personal_sign",
-        params: params || [],
-      });
-      if (native && native.result)
-        return sendResponse({ result: native.result });
-      if (native && native.error) return sendResponse({ error: native.error });
-      return sendResponse({ error: "Signing failed" });
-    }
-
-    if (method === "eth_signTypedData_v4") {
-      const native = await callNative({
-        method: "eth_signTypedData_v4",
-        params: params || [],
-      });
-      if (native && native.result)
-        return sendResponse({ result: native.result });
-      if (native && native.error) return sendResponse({ error: native.error });
-      return sendResponse({ error: "Signing failed" });
-    }
-
-    if (method === "eth_sendTransaction") {
-      const native = await callNative({
-        method: "eth_sendTransaction",
-        params: params || [],
-      });
-      if (native && native.result)
-        return sendResponse({ result: native.result });
-      if (native && native.error) return sendResponse({ error: native.error });
-      return sendResponse({ error: "Transaction failed" });
-    }
-
-    return sendResponse({ error: `Unsupported confirm method ${method}` });
-  } catch (error) {
-    console.error("Error confirming:", error);
-    sendResponse({ error: "Failed to confirm request" });
-  }
-}
-
-async function handleAccounts(sendResponse) {
   try {
     const native = await callNative({
-      method: "eth_accounts",
-      params: [],
+      method,
+      params,
+      siteMetadata,
     });
-
     if (native && native.result) {
-      console.log("Returning accounts (native):", native.result);
-      sendResponse({ result: native.result });
-    } else if (native && native.error) {
-      console.error("Native handler error:", native.error);
-      sendResponse({ error: native.error });
-    } else {
-      console.log("No accounts found");
-      sendResponse({ result: [] });
+      // Clean up stored metadata after successful confirmation
+      if (requestId) {
+        pendingRequests.delete(requestId);
+      }
+      return sendResponse({ result: native.result });
     }
+    if (native && native.error) {
+      // Clean up stored metadata even on error
+      if (requestId) {
+        pendingRequests.delete(requestId);
+      }
+      return sendResponse({ error: native.error });
+    }
+    // Clean up stored metadata on failure
+    if (requestId) {
+      pendingRequests.delete(requestId);
+    }
+    return sendResponse({ error: "Signing failed" });
   } catch (error) {
-    console.error("Error getting accounts:", error);
-    sendResponse({ error: "Failed to get accounts" });
+    console.error("Error confirming:", error);
+    // Clean up stored metadata on exception
+    if (requestId) {
+      pendingRequests.delete(requestId);
+    }
+    sendResponse({ error: "Failed to confirm request" });
   }
 }
 

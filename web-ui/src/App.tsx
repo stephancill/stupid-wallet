@@ -3,6 +3,7 @@ import { ConnectModal } from "./components/ConnectModal";
 import { SignMessageModal } from "./components/SignMessageModal";
 import { SignTypedDataModal } from "./components/SignTypedDataModal";
 import { SendTxModal } from "./components/SendTxModal";
+import { FAST_METHODS, UI_METHODS } from "./lib/constants";
 
 declare const browser: any;
 
@@ -10,20 +11,15 @@ type ApprovalResult =
   | { approved: true; finalResponse: any }
   | { approved: false; finalResponse: any };
 
-type ModalState = null | {
-  type: "connect" | "personal_sign" | "sign_typed" | "send_tx";
-  method:
-    | "eth_requestAccounts"
-    | "personal_sign"
-    | "eth_signTypedData_v4"
-    | "eth_sendTransaction";
+type ModalState = {
+  method: (typeof UI_METHODS)[number];
   params: any[];
+  requestId: string;
   resolve: (r: ApprovalResult) => void;
-  tx?: Record<string, any>;
 };
 
 export function App({ container }: { container: HTMLDivElement }) {
-  const [modal, setModal] = React.useState<ModalState>(null);
+  const [modal, setModal] = React.useState<ModalState | null>(null);
 
   const normalizePersonalSignParams = React.useCallback(
     (params: any[]): [string | undefined, string | undefined] => {
@@ -72,19 +68,13 @@ export function App({ container }: { container: HTMLDivElement }) {
   );
 
   React.useEffect(() => {
-    const UI_METHODS = new Set([
-      "eth_requestAccounts",
-      "personal_sign",
-      "eth_signTypedData_v4",
-      "eth_sendTransaction",
-    ]);
-
     const handleMessage = async (event: MessageEvent) => {
       if (event.source !== window) return;
       if (!event.data || event.data.source !== "stupid-wallet-inject") return;
 
-      const method: string = event.data.method;
-      if (!UI_METHODS.has(method)) return; // Non-UI handled by bridge
+      if (FAST_METHODS.includes(event.data.method)) return; // Non-UI handled by bridge
+
+      const method: ModalState["method"] = event.data.method;
 
       try {
         const response = await browser.runtime.sendMessage({
@@ -105,65 +95,11 @@ export function App({ container }: { container: HTMLDivElement }) {
           );
         };
 
-        if (
-          response &&
-          response.pending === true &&
-          method === "eth_requestAccounts"
-        ) {
+        if (response && response.pending === true) {
           setModal({
-            type: "connect",
-            method: "eth_requestAccounts",
-            params: [],
-            resolve: (r) => post(r.finalResponse),
-          });
-          return;
-        }
-
-        if (
-          response &&
-          response.pending === true &&
-          method === "personal_sign"
-        ) {
-          const [messageHex, address] = normalizePersonalSignParams(
-            event.data.params
-          );
-          setModal({
-            type: "personal_sign",
-            method: "personal_sign",
-            params: [messageHex, address],
-            resolve: (r) => post(r.finalResponse),
-          });
-          return;
-        }
-
-        if (
-          response &&
-          response.pending === true &&
-          method === "eth_signTypedData_v4"
-        ) {
-          const [address, typedDataJSON] = normalizeSignTypedDataV4Params(
-            event.data.params
-          );
-          setModal({
-            type: "sign_typed",
-            method: "eth_signTypedData_v4",
-            params: [address, typedDataJSON],
-            resolve: (r) => post(r.finalResponse),
-          });
-          return;
-        }
-
-        if (
-          response &&
-          response.pending === true &&
-          method === "eth_sendTransaction"
-        ) {
-          const tx = (event.data.params && event.data.params[0]) || {};
-          setModal({
-            type: "send_tx",
-            method: "eth_sendTransaction",
-            params: [tx],
-            tx,
+            method,
+            params: event.data.params ?? [],
+            requestId: event.data.requestId,
             resolve: (r) => post(r.finalResponse),
           });
           return;
@@ -227,6 +163,7 @@ export function App({ container }: { container: HTMLDivElement }) {
         approved: false,
         method: modal.method,
         params: computeParams(),
+        requestId: modal.requestId,
       });
       modal.resolve({ approved: false, finalResponse });
       setModal(null);
@@ -242,6 +179,7 @@ export function App({ container }: { container: HTMLDivElement }) {
         approved: true,
         method: modal.method,
         params: computeParams(),
+        requestId: modal.requestId,
       });
       modal.resolve({ approved: true, finalResponse });
       setModal(null);
@@ -250,16 +188,22 @@ export function App({ container }: { container: HTMLDivElement }) {
     }
   };
 
-  if (modal.type === "connect") {
+  if (
+    modal.method === "wallet_connect" ||
+    modal.method === "eth_requestAccounts"
+  ) {
+    console.log("modal params", modal.params);
+
     return (
       <ConnectModal
         host={location.host}
         onApprove={onApprove}
         onReject={onReject}
+        capabilities={modal.params?.[0]?.capabilities}
       />
     );
   }
-  if (modal.type === "personal_sign") {
+  if (modal.method === "personal_sign") {
     const [messageHex, address] = modal.params as [
       string | undefined,
       string | undefined
@@ -274,7 +218,7 @@ export function App({ container }: { container: HTMLDivElement }) {
       />
     );
   }
-  if (modal.type === "sign_typed") {
+  if (modal.method === "eth_signTypedData_v4") {
     const [address, typedDataJSON] = modal.params as [
       string | undefined,
       string | undefined
@@ -289,11 +233,11 @@ export function App({ container }: { container: HTMLDivElement }) {
       />
     );
   }
-  if (modal.type === "send_tx") {
+  if (modal.method === "eth_sendTransaction") {
     return (
       <SendTxModal
         host={location.host}
-        tx={modal.tx || {}}
+        tx={modal.params[0] || {}}
         onApprove={onApprove}
         onReject={onReject}
       />

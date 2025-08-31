@@ -20,8 +20,14 @@ Data flow:
 1. DApp calls `window.ethereum.request({ method, params })`.
 2. Injected provider posts a message to the window (source: `stupid-wallet-inject`).
 3. Content script relays to background via `browser.runtime.sendMessage`.
-4. Background queries native handler or shared storage and responds.
-5. Content script posts the response back (source: `stupid-wallet-content`).
+4. Background extracts site metadata (domain, URI, scheme) from sender and includes in request.
+5. Background queries native handler or shared storage and responds.
+6. Content script posts the response back (source: `stupid-wallet-content`).
+
+Request tracking:
+
+- Fast methods: Direct execution via native handler
+- Confirmation methods: Background stores site metadata with requestId, returns `{ pending: true }`, then handles `WALLET_CONFIRM` after user approval with stored metadata
 
 Provider discovery (EIP‑6963):
 
@@ -42,11 +48,17 @@ Networking:
 Supported provider methods (end-to-end):
 
 - `eth_requestAccounts` (pending → confirm flow)
-- `eth_accounts`
-- `eth_chainId`
-- `eth_blockNumber`
-- `wallet_addEthereumChain`
-- `wallet_switchEthereumChain`
+- `eth_accounts` (fast method)
+- `eth_chainId` (fast method)
+- `eth_blockNumber` (fast method)
+- `wallet_addEthereumChain` (fast method)
+- `wallet_switchEthereumChain` (fast method)
+- `wallet_connect` (pending → confirm flow with SIWE capability)
+- `wallet_disconnect` (fast method)
 - `personal_sign` (pending → confirm flow)
 - `eth_signTypedData_v4` (pending → confirm flow)
 - `eth_sendTransaction` (pending → confirm flow)
+
+Capabilities:
+
+- SIWE (Sign In With Ethereum): Automatic domain/URI extraction, EIP-191 signing, chain ID validation per wallet_connect spec
