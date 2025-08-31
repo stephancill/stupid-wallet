@@ -64,7 +64,8 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         case "eth_requestAccounts":
             return handleRequestAccounts()
         case "wallet_connect":
-            return handleWalletConnect()
+            let params = messageDict["params"] as? [Any]
+            return handleWalletConnect(params: params)
         case "eth_accounts":
             return handleAccounts()
         case "eth_chainId":
@@ -147,11 +148,30 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     }
 
     // TODO: Handle capabilities e.g. SIWE
-    private func handleWalletConnect() -> [String: Any] {
+    private func handleWalletConnect(params: [Any]?) -> [String: Any] {
         let address = getSavedAddress()
         if let address = address {
+            var account: [String: Any] = ["address": address]
+            
+            if let dict = params?[0] as? [String: Any] {
+                // Access the nested dictionary
+                if let requestCapabilities = dict["capabilities"] as? [String: Any] {
+                    var capabilities: [String: Any] = [:]
+                    
+                    // Access a key within the nested dictionary
+                    if let signInWithEthereum = requestCapabilities["signInWithEthereum"] {
+                        let message = "sample message"
+                        let signature = try! personalSign(message: Data(message))
+
+                        capabilities["signInWithEthereum"] = ["message": message, "signature": signature]
+                    }
+                    
+                    account["capabilities"] = capabilities
+                }
+            }
+
             logger.info("Returning address for wallet_connect: \(address)")
-            return ["result": ["accounts": [["address": address]]]]
+            return ["result": ["accounts": [account]]]
         } else {
             logger.info("No address found, returning empty array")
             return ["result": []]
@@ -416,6 +436,25 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             logger.info("No address stored under key 'walletAddress'")
             return nil
         }
+    }
+
+    private func personalSign(message messageData: Data) throws -> String {
+        let saved = getSavedAddress()
+        
+        // EIP-191 personal_sign digest: keccak256("\u{19}Ethereum Signed Message:\n" + len + message)
+        let prefix = "\u{19}Ethereum Signed Message:\n\(messageData.count)"
+        var prefixed = Array(prefix.utf8)
+        prefixed.append(contentsOf: [UInt8](messageData))
+        let digest: [UInt8] = prefixed.sha3(.keccak256)
+
+        // Initialize account and sign digest
+        let ethAddress = try Model.EthereumAddress(hex: saved!)
+        let account = EthereumAccount(address: ethAddress)
+        let signature = try account.signDigest(digest, accessGroup: Constants.accessGroup)
+        let canonical = toCanonicalSignature((v: signature.v, r: signature.r, s: signature.s))
+        let sigHex = "0x" + canonical.map { String(format: "%02x", $0) }.joined()
+
+        return sigHex
     }
 }
 
