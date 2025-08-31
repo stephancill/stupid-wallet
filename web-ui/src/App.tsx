@@ -14,6 +14,7 @@ type ApprovalResult =
 type ModalState = {
   method: (typeof UI_METHODS)[number];
   params: any[];
+  requestId: string;
   resolve: (r: ApprovalResult) => void;
 };
 
@@ -98,6 +99,7 @@ export function App({ container }: { container: HTMLDivElement }) {
           setModal({
             method,
             params: event.data.params ?? [],
+            requestId: event.data.requestId,
             resolve: (r) => post(r.finalResponse),
           });
           return;
@@ -161,6 +163,7 @@ export function App({ container }: { container: HTMLDivElement }) {
         approved: false,
         method: modal.method,
         params: computeParams(),
+        requestId: modal.requestId,
       });
       modal.resolve({ approved: false, finalResponse });
       setModal(null);
@@ -176,6 +179,7 @@ export function App({ container }: { container: HTMLDivElement }) {
         approved: true,
         method: modal.method,
         params: computeParams(),
+        requestId: modal.requestId,
       });
       modal.resolve({ approved: true, finalResponse });
       setModal(null);

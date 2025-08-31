@@ -12,8 +12,9 @@ export const FAST_METHODS = [
   "eth_blockNumber",
   "wallet_addEthereumChain",
   "wallet_switchEthereumChain",
+  "wallet_disconnect",
 ] as const;
 
 // Note: supported methods are also independently declared in
 // inject.js and background.js
-export const SUPPORTED_METHODS = [...FAST_METHODS, UI_METHODS] as const;
+export const SUPPORTED_METHODS = [...FAST_METHODS, ...UI_METHODS] as const;

@@ -20,6 +20,12 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     private let appGroupId = Constants.appGroupId
     private let logger = Logger(subsystem: "co.za.stephancill.stupid-wallet", category: "SafariWebExtensionHandler")
 
+    struct AppMetadata {
+        let domain: String?
+        let uri: String?
+        let scheme: String?
+    }
+
     func beginRequest(with context: NSExtensionContext) {
         let request = context.inputItems.first as? NSExtensionItem
 
@@ -37,10 +43,13 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             message = request?.userInfo?["message"]
         }
 
-        os_log(.default, "Received message from browser.runtime.sendNativeMessage: %@ (profile: %@)", String(describing: message), profile?.uuidString ?? "none")
+        // Extract app metadata from request context and message
+        let appMetadata = extractAppMetadata(from: request, message: message)
+
+        os_log(.default, "Received message from browser.runtime.sendNativeMessage: %@ (profile: %@, domain: %@)", String(describing: message), profile?.uuidString ?? "none", appMetadata.domain ?? "unknown")
 
         let response = NSExtensionItem()
-        let responseMessage = handleWalletRequest(message)
+        let responseMessage = handleWalletRequest(message, appMetadata: appMetadata)
         
         if #available(iOS 15.0, macOS 11.0, *) {
             response.userInfo = [ SFExtensionMessageKey: responseMessage ]
@@ -51,7 +60,65 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         context.completeRequest(returningItems: [ response ], completionHandler: nil)
     }
 
-    private func handleWalletRequest(_ message: Any?) -> [String: Any] {
+    private func extractAppMetadata(from request: NSExtensionItem?, message: Any?) -> AppMetadata {
+        // First try to get site metadata from the message (passed from background script)
+        if let messageDict = message as? [String: Any],
+           let siteMetadata = messageDict["siteMetadata"] as? [String: Any] {
+            if let domain = siteMetadata["domain"] as? String,
+               let url = siteMetadata["url"] as? String,
+               let scheme = siteMetadata["scheme"] as? String {
+                logger.info("Extracted site metadata from message: domain=\(domain), url=\(url)")
+                return AppMetadata(
+                    domain: domain,
+                    uri: url,
+                    scheme: scheme
+                )
+            }
+        }
+
+        // Fallback: Try to extract URL from the request context
+        // Safari extensions may provide URL information through various means
+
+        // Check for URL in attachments
+        if let attachments = request?.attachments {
+            for attachment in attachments {
+                if attachment.hasItemConformingToTypeIdentifier("public.url"),
+                   let urlData = try? attachment.loadItem(forTypeIdentifier: "public.url") as? URL {
+                    logger.info("Extracted site metadata from attachments: domain=\(urlData.host ?? "nil"), url=\(urlData.absoluteString)")
+                    return AppMetadata(
+                        domain: urlData.host,
+                        uri: urlData.absoluteString,
+                        scheme: urlData.scheme
+                    )
+                }
+            }
+        }
+
+        // Check for URL in userInfo
+        if let userInfo = request?.userInfo {
+            if let urlString = userInfo["url"] as? String,
+               let url = URL(string: urlString) {
+                logger.info("Extracted site metadata from userInfo: domain=\(url.host ?? "nil"), url=\(url.absoluteString)")
+                return AppMetadata(
+                    domain: url.host,
+                    uri: url.absoluteString,
+                    scheme: url.scheme
+                )
+            }
+        }
+
+        // Try to get URL from NSExtensionContext if available
+        if let context = request?.userInfo?["NSExtensionContext"] as? NSExtensionContext {
+            // This is a fallback - in practice, Safari might not provide this
+            // But it's worth trying for future compatibility
+        }
+
+        // Final fallback to unknown
+        logger.info("No site metadata found, falling back to unknown domain")
+        return AppMetadata(domain: nil, uri: nil, scheme: nil)
+    }
+
+    private func handleWalletRequest(_ message: Any?, appMetadata: AppMetadata) -> [String: Any] {
         guard let messageDict = message as? [String: Any],
               let method = messageDict["method"] as? String else {
             logger.error("Invalid message format")
@@ -65,7 +132,9 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             return handleRequestAccounts()
         case "wallet_connect":
             let params = messageDict["params"] as? [Any]
-            return handleWalletConnect(params: params)
+            return handleWalletConnect(params: params, appMetadata: appMetadata)
+        case "wallet_disconnect":
+            return handleWalletDisconnect()
         case "eth_accounts":
             return handleAccounts()
         case "eth_chainId":
@@ -147,35 +216,73 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         }
     }
 
-    // TODO: Handle capabilities e.g. SIWE
-    private func handleWalletConnect(params: [Any]?) -> [String: Any] {
+    private func handleWalletConnect(params: [Any]?, appMetadata: AppMetadata) -> [String: Any] {
         let address = getSavedAddress()
-        if let address = address {
-            var account: [String: Any] = ["address": address]
-            
-            if let dict = params?[0] as? [String: Any] {
-                // Access the nested dictionary
-                if let requestCapabilities = dict["capabilities"] as? [String: Any] {
-                    var capabilities: [String: Any] = [:]
-                    
-                    // Access a key within the nested dictionary
-                    if let signInWithEthereum = requestCapabilities["signInWithEthereum"] {
-                        let message = "sample message"
-                        let signature = try! personalSign(message: Data(message))
-
-                        capabilities["signInWithEthereum"] = ["message": message, "signature": signature]
-                    }
-                    
-                    account["capabilities"] = capabilities
-                }
-            }
-
-            logger.info("Returning address for wallet_connect: \(address)")
-            return ["result": ["accounts": [account]]]
-        } else {
+        guard let address = address else {
             logger.info("No address found, returning empty array")
             return ["result": []]
         }
+
+        // Parse request parameters
+        var requestCapabilities: [String: Any]? = nil
+        var requestedChainIds: [String]? = nil
+        var version: String = "1"
+
+        if let dict = params?.first as? [String: Any] {
+            requestCapabilities = dict["capabilities"] as? [String: Any]
+            requestedChainIds = dict["chainIds"] as? [String]
+            if let ver = dict["version"] as? String {
+                version = ver
+            }
+        }
+
+        // Validate chain IDs if provided
+        var supportedChainIds: [String] = []
+        if let requested = requestedChainIds {
+            for chainIdHex in requested {
+                if isChainSupported(chainIdHex) {
+                    supportedChainIds.append(chainIdHex.lowercased())
+                }
+            }
+            if supportedChainIds.isEmpty {
+                return ["error": "5710 Unsupported Chain"]
+            }
+        } else {
+            // If no chainIds requested, use current chain
+            supportedChainIds = [Constants.Networks.getCurrentChainIdHex()]
+        }
+
+        // Process capabilities
+        var account: [String: Any] = ["address": address]
+        var capabilities: [String: Any] = [:]
+
+        if let reqCaps = requestCapabilities {
+            if let siweParams = reqCaps["signInWithEthereum"] as? [String: Any] {
+                do {
+                    let siweResult = try handleSignInWithEthereum(params: siweParams, address: address, chainIds: supportedChainIds, appMetadata: appMetadata)
+                    capabilities["signInWithEthereum"] = siweResult
+                } catch {
+                    logger.error("SIWE signing failed: \(error)")
+                    return ["error": "SIWE signing failed"]
+                }
+            }
+        }
+
+        account["capabilities"] = capabilities
+
+        logger.info("Returning wallet_connect response for address: \(address)")
+        return ["result": [
+            "accounts": [account],
+            "chainIds": supportedChainIds
+        ]]
+    }
+
+    private func handleWalletDisconnect() -> [String: Any] {
+        // According to spec: revoke access to user account info and capabilities
+        // In this implementation, we don't maintain persistent sessions beyond stored address
+        // So we just return success - the app can clear its local state
+        logger.info("Handling wallet_disconnect - no persistent session to revoke")
+        return ["result": true]
     }
 
     private func handleAccounts() -> [String: Any] {
@@ -438,9 +545,118 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         }
     }
 
-    private func personalSign(message messageData: Data) throws -> String {
-        let saved = getSavedAddress()
-        
+    private func isChainSupported(_ chainIdHex: String) -> Bool {
+        let cleanHex = chainIdHex.lowercased()
+        let clean = cleanHex.hasPrefix("0x") ? String(cleanHex.dropFirst(2)) : cleanHex
+        guard let chainId = BigUInt(clean, radix: 16) else { return false }
+
+        // Check if it's in default networks
+        if Constants.Networks.defaultNetworksByChainId[chainId] != nil {
+            return true
+        }
+
+        // Check if it's in custom networks
+        let customNetworks = Constants.Networks.loadCustomNetworks()
+        return customNetworks[chainId] != nil
+    }
+
+    private func handleSignInWithEthereum(params: [String: Any], address: String, chainIds: [String], appMetadata: AppMetadata) throws -> [String: Any] {
+        // Extract SIWE parameters with defaults from app metadata
+        let nonce = params["nonce"] as? String ?? ""
+
+        // Determine chain ID according to wallet_connect spec:
+        // "chainId is optional. If not provided, the Wallet MUST fill this field with one of the
+        //  chain IDs requested on the wallet_connect request (or any chain ID the account supports
+        //  if no chain IDs were requested)."
+        //
+        // Implementation priority:
+        // 1. Use explicitly provided chainId if present
+        // 2. Use first chain ID from wallet_connect request if available
+        // 3. Fall back to 0x1 (Ethereum mainnet)
+        var chainId: String
+        if let explicitChainId = params["chainId"] as? String {
+            // Validate explicit chainId is supported
+            guard isChainSupported(explicitChainId) else {
+                logger.error("SIWE: Explicitly provided chainId is not supported: \(explicitChainId)")
+                throw NSError(domain: "SIWE", code: 3, userInfo: [NSLocalizedDescriptionKey: "Explicitly provided chain ID is not supported: \(explicitChainId)"])
+            }
+            chainId = explicitChainId
+            logger.info("SIWE: Using explicitly provided chainId: \(chainId)")
+        } else if let firstSupportedChainId = chainIds.first {
+            chainId = firstSupportedChainId
+            logger.info("SIWE: Using first chainId from wallet_connect request: \(chainId), available chains: \(chainIds)")
+        } else {
+            chainId = "0x1" // Ethereum mainnet as fallback
+            logger.info("SIWE: No chainIds available, falling back to Ethereum mainnet: \(chainId)")
+        }
+
+        // Validate that the chosen chain ID is supported
+        guard isChainSupported(chainId) else {
+            logger.error("SIWE: Unsupported chain ID selected: \(chainId)")
+            throw NSError(domain: "SIWE", code: 2, userInfo: [NSLocalizedDescriptionKey: "Unsupported chain ID for SIWE: \(chainId)"])
+        }
+        // Use app metadata domain/URI as primary, fall back to params or defaults
+        let domain = params["domain"] as? String ?? appMetadata.domain ?? "unknown-domain"
+        let uri = params["uri"] as? String ?? appMetadata.uri ?? "https://\(domain)"
+        let version = params["version"] as? String ?? "1"
+        let issuedAt = params["issuedAt"] as? String ?? ISO8601DateFormatter().string(from: Date())
+        let expirationTime = params["expirationTime"] as? String
+        let notBefore = params["notBefore"] as? String
+        let requestId = params["requestId"] as? String
+        let resources = params["resources"] as? [String] ?? []
+        let statement = params["statement"] as? String
+        // Use app metadata scheme as primary, fall back to params
+        let scheme = params["scheme"] as? String ?? appMetadata.scheme ?? "https"
+
+        // Generate SIWE message
+        var message = "\(domain) wants you to sign in with your Ethereum account:\n\(address)\n\n"
+
+        if let statement = statement {
+            message += "\(statement)\n\n"
+        }
+
+        message += "URI: \(uri)\n"
+        message += "Version: \(version)\n"
+        message += "Chain ID: \(chainId)\n"
+        message += "Nonce: \(nonce)\n"
+        message += "Issued At: \(issuedAt)\n"
+
+        if let expirationTime = expirationTime {
+            message += "Expiration Time: \(expirationTime)\n"
+        }
+
+        if let notBefore = notBefore {
+            message += "Not Before: \(notBefore)\n"
+        }
+
+        if let requestId = requestId {
+            message += "Request ID: \(requestId)\n"
+        }
+
+        if !resources.isEmpty {
+            message += "Resources:\n"
+            for resource in resources {
+                message += "- \(resource)\n"
+            }
+        }
+
+        // Remove trailing newline
+        let finalMessage = message.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Sign the message using EIP-191 personal_sign
+        let signature = try signSIWEMessage(finalMessage, address: address)
+
+        return [
+            "message": finalMessage,
+            "signature": signature
+        ]
+    }
+
+    private func signSIWEMessage(_ message: String, address: String) throws -> String {
+        guard let messageData = message.data(using: .utf8) else {
+            throw NSError(domain: "SIWE", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to encode message"])
+        }
+
         // EIP-191 personal_sign digest: keccak256("\u{19}Ethereum Signed Message:\n" + len + message)
         let prefix = "\u{19}Ethereum Signed Message:\n\(messageData.count)"
         var prefixed = Array(prefix.utf8)
@@ -448,7 +664,7 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         let digest: [UInt8] = prefixed.sha3(.keccak256)
 
         // Initialize account and sign digest
-        let ethAddress = try Model.EthereumAddress(hex: saved!)
+        let ethAddress = try Model.EthereumAddress(hex: address)
         let account = EthereumAccount(address: ethAddress)
         let signature = try account.signDigest(digest, accessGroup: Constants.accessGroup)
         let canonical = toCanonicalSignature((v: signature.v, r: signature.r, s: signature.s))
@@ -456,6 +672,8 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
         return sigHex
     }
+
+
 }
 
 // Helpers

@@ -35,6 +35,9 @@
         case "wallet_connect":
           return this._requestAccounts({ method, params });
 
+        case "wallet_disconnect":
+          return this._handleRequest({ method, params });
+
         case "eth_accounts":
           return this._getAccounts();
 
