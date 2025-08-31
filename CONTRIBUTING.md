@@ -144,11 +144,31 @@ xcodebuild -scheme ios-wallet -configuration Debug -destination 'generic/platfor
 
 - **EIP‑1193 methods**
 
-  - Injected provider: add a `case` handler in `inject.js` → route via postMessage.
-  - Content script: if the method requires user consent, implement a modal in `web-ui/src/components/*` and wire the pending → confirm flow in `web-ui/src/App.tsx`.
-  - Background: add a handler in `background.js` and forward to native if needed; for consented flows, send `{ pending: true }` first and handle `WALLET_CONFIRM`.
-  - Native handler: implement the method in `SafariWebExtensionHandler.swift` and return `{ result }` or `{ error }`.
-  - Update docs of supported methods below as needed.
+  **For Fast Methods** (no user confirmation required):
+
+  - Add method name to `FAST_METHODS` in `web-ui/src/lib/constants.ts`
+  - Add method case to fast methods switch in `safari/Resources/background.js`
+  - Implement handler in `SafariWebExtensionHandler.swift`
+  - Add method case to request switch in `safari/Resources/inject.js`
+
+  **For Confirmation-Required Methods** (need user approval):
+
+  - Add method name to `UI_METHODS` in `web-ui/src/lib/constants.ts`
+  - Add method case to confirmation-required switch in `safari/Resources/background.js`
+  - Create modal component in `web-ui/src/components/` (e.g., `NewMethodModal.tsx`)
+  - Add method case to request switch in `safari/Resources/inject.js`
+  - Add method case to pending→confirm flow in `web-ui/src/App.tsx`
+  - Implement handler in `SafariWebExtensionHandler.swift`
+  - Update supported methods documentation
+
+  **Implementation Notes:**
+
+  - Fast methods return results immediately via native handler
+  - Confirmation methods first return `{ pending: true }`, then handle `WALLET_CONFIRM` after user approval
+  - All methods support site metadata extraction for proper domain/URI handling
+  - Use `requestId` for tracking pending requests across the confirmation flow
+  - Native handlers should return `{ result }` or `{ error }` responses
+  - **Request Tracking**: Background script maintains a `pendingRequests` Map to store site metadata for confirmation-required methods, with automatic cleanup (5-minute timeout)
 
 - **Balances / Networks**
 
@@ -161,15 +181,26 @@ xcodebuild -scheme ios-wallet -configuration Debug -destination 'generic/platfor
   - Ensure any new signing flows request consent and never expose the raw private key to the page.
 
 - **Web UI / Modals**
+
   - Modals are React components using shadcn/ui Credenza (responsive Dialog/Drawer) and render inside a Shadow DOM.
   - Edit `web-ui/src/components/RequestModal.tsx` (shared wrapper) and specific modal components; ensure to keep `onOpenChange` rejecting on dismiss.
   - Shadow DOM styling is isolated; Tailwind v4 tokens are provided via CSS variables injected in `shadowHost.ts`.
+
+- **Site Metadata Extraction**
+  - Background script automatically extracts site metadata (domain, URI, scheme) from sender information
+  - Metadata is passed through the request chain for SIWE message generation and security validation
+  - Supports various sender types: tabs, frames, direct URLs with fallback handling
+  - Metadata extraction prioritizes: message data → request attachments → userInfo → fallback
 
 ### Security Considerations
 
 - Do not inject privileged APIs into the page; use postMessage bridges.
 - Freeze provider detail objects when announcing via EIP-6963.
-- Supported today: `eth_requestAccounts`, `eth_accounts`, `eth_chainId`, `eth_blockNumber`, `wallet_addEthereumChain`, `wallet_switchEthereumChain`, `personal_sign`, `eth_signTypedData_v4`, `eth_sendTransaction`. Prefer keeping the surface minimal and consented.
+- **Request Flow Patterns:**
+  - **Fast Methods**: Direct native handler execution (accounts, chain info, chain switching, disconnect)
+  - **Confirmation Methods**: Pending → user approval → native handler execution (connect, signing, transactions)
+- Supported today: `eth_requestAccounts`, `eth_accounts`, `eth_chainId`, `eth_blockNumber`, `wallet_addEthereumChain`, `wallet_switchEthereumChain`, `wallet_connect`, `wallet_disconnect`, `personal_sign`, `eth_signTypedData_v4`, `eth_sendTransaction`.
+- All methods support automatic site metadata extraction (domain, URI, scheme) for proper SIWE message generation.
 - Never log sensitive data (private keys, seeds, decrypted material).
 
 ### Style Guidelines

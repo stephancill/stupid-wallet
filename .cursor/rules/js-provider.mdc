@@ -7,13 +7,15 @@ description: Conventions for injected EIP-1193 provider, content script bridge, 
 
 - Inject EIP-1193 provider in MAIN world only (`inject.js`).
 - Use strict mode and a self-invoking function; avoid leaking globals.
-- Supported methods implemented end-to-end: `eth_requestAccounts`, `eth_accounts`, `eth_chainId`, `eth_blockNumber`, `wallet_addEthereumChain`, `wallet_switchEthereumChain`, `personal_sign`, `eth_signTypedData_v4`, `eth_sendTransaction`.
+- Supported methods implemented end-to-end: `eth_requestAccounts`, `eth_accounts`, `eth_chainId`, `eth_blockNumber`, `wallet_addEthereumChain`, `wallet_switchEthereumChain`, `wallet_connect`, `wallet_disconnect`, `personal_sign`, `eth_signTypedData_v4`, `eth_sendTransaction`.
 - Use `window.postMessage` for requests from page → content script. Do not call `browser.*` or `chrome.*` in MAIN world.
 - Content script listens for `{ source: "stupid-wallet-inject", method, params, requestId }` and relays to background.
 - Background routes methods and may call native; respond with `{ result }` or `{ error }`.
 - Responses from content script back to page must include the original `requestId` and `source: "stupid-wallet-content"`.
 - EIP-6963: dispatch `eip6963:announceProvider` and re-dispatch on `eip6963:requestProvider`. Freeze the detail object.
 - Keep provider surface minimal; prefer `request()` over deprecated `send`/`sendAsync`. Include legacy shims if necessary.
+- `wallet_connect` supports SIWE (Sign In With Ethereum) capability with automatic domain/URI extraction and chain ID validation.
+- All methods support automatic site metadata extraction (domain, URI, scheme) from sender information for security and SIWE compliance.
 
 Security:
 
