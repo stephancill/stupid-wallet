@@ -211,6 +211,18 @@ xcodebuild -scheme ios-wallet -configuration Debug -destination 'generic/platfor
   - Use guard/early returns and avoid deep nesting.
   - Keep UI code simple and state-driven with `@StateObject`/`@Published`.
 
+- **Logging**
+
+  - **Safari Extension Logging**: Use `Logger` with subsystem and category for structured logging
+    - `let logger = Logger(subsystem: "co.za.stephancill.stupid-wallet", category: "SafariWebExtensionHandler")`
+    - Use `privacy: .public` for values that are safe to log: `logger.info("Transaction hash: \(txHash, privacy: .public)")`
+    - **Never log sensitive data**: private keys, seeds, decrypted material, or personal information
+  - **Viewing Logs**: To see Safari extension logs in Xcode:
+    - Run the app in Simulator
+    - In Xcode: Debug > Attach to Process > Safari
+    - Open Safari in the Simulator and navigate to a site that uses the extension
+    - Console logs will appear in Xcode's debug console
+
 - **JavaScript**
   - Keep provider implementation minimal and standards-compliant.
   - Avoid global pollution; encapsulate in IIFE.
