@@ -1,13 +1,12 @@
 import Address from "@/components/Address";
+import { CallDecoder } from "@/components/CallDecoder";
 import { Skeleton } from "@/components/ui/skeleton";
-import { whatsabi } from "@shazow/whatsabi";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   createPublicClient,
-  decodeFunctionData,
   formatEther,
   hexToBigInt,
   hexToNumber,
@@ -91,7 +90,7 @@ export function SendTxModal({
   const isBatchCall = method === "wallet_sendCalls";
 
   // Extract transaction data with proper typing
-  const transactions = useMemo(() => {
+  const calls = useMemo(() => {
     if (isWalletSendCalls(params)) {
       // wallet_sendCalls: params[0] contains {calls: [...]}
       const batchParams = params[0];
@@ -115,11 +114,11 @@ export function SendTxModal({
 
   // Calculate total value for batch calls
   const totalValue = useMemo(() => {
-    return transactions.reduce((sum: bigint, tx: BaseTransaction) => {
+    return calls.reduce((sum: bigint, tx: BaseTransaction) => {
       const value = tx.value ?? "0x0";
       return sum + (isHex(value) ? hexToBigInt(value) : 0n);
     }, 0n);
-  }, [transactions]);
+  }, [calls]);
 
   const totalValueEth = useMemo(() => {
     return formatEther(totalValue);
@@ -127,8 +126,8 @@ export function SendTxModal({
 
   // Primary transaction for single transaction operations
   const primaryTransaction = useMemo(
-    () => transactions[0] || ({} as BaseTransaction),
-    [transactions]
+    () => calls[0] || ({} as BaseTransaction),
+    [calls]
   );
 
   // Extract from address
@@ -136,8 +135,6 @@ export function SendTxModal({
     () => primaryTransaction.from || "",
     [primaryTransaction]
   );
-
-  const [showMoreDecoded, setShowMoreDecoded] = useState(false);
 
   useEffect(() => {
     console.log("method:", method, "params:", params);
@@ -173,44 +170,6 @@ export function SendTxModal({
     [primaryTransaction]
   );
 
-  const {
-    data: abiLoadResult,
-    isLoading: isAbiLoadLoading,
-    isError: isAbiLoadError,
-  } = useQuery({
-    queryKey: ["contractAbi", to?.toLowerCase?.() || to, chain?.id],
-    queryFn: async () => {
-      try {
-        const client = createPublicClient({
-          chain: chain,
-          transport: http(),
-        });
-
-        const etherscanBaseUrl = Object.values(
-          chain?.blockExplorers || {}
-        ).find((item) => item.name.includes("scan"))?.apiUrl;
-
-        if (!etherscanBaseUrl) {
-          throw new Error("Block explorer base URL not found");
-        }
-
-        const result = await whatsabi.autoload(to, {
-          provider: client,
-          ...whatsabi.loaders.defaultsWithEnv({
-            SOURCIFY_CHAIN_ID: chain?.id.toString(),
-            ETHERSCAN_API_KEY: process.env.ETHERSCAN_API_KEY,
-            ETHERSCAN_BASE_URL: etherscanBaseUrl,
-          }),
-        });
-
-        return result;
-      } catch (_) {
-        return null;
-      }
-    },
-    enabled: Boolean(chain && to && !isBatchCall), // Only load ABI for single transactions
-  });
-
   const dataHex: string = useMemo(() => {
     return (
       (typeof primaryTransaction.data === "string" &&
@@ -220,146 +179,6 @@ export function SendTxModal({
       "0x"
     );
   }, [primaryTransaction]);
-
-  const decoded = useMemo(() => {
-    if (!dataHex || dataHex === "0x") return null;
-    if (!abiLoadResult) return null;
-    return decodeFunctionData({
-      abi: abiLoadResult.abi,
-      data: dataHex as `0x${string}`,
-    });
-  }, [abiLoadResult, dataHex]);
-
-  const functionItem = useMemo(() => {
-    try {
-      if (!decoded || !abiLoadResult?.abi) return null;
-      const abi = (abiLoadResult.abi || []) as Array<any>;
-      const candidates = abi.filter(
-        (item) =>
-          item?.type === "function" && item?.name === decoded.functionName
-      );
-      if (candidates.length === 0) return null;
-      const exact = candidates.find(
-        (item) => (item?.inputs?.length || 0) === (decoded.args?.length || 0)
-      );
-      return exact || candidates[0];
-    } catch {
-      return null;
-    }
-  }, [decoded, abiLoadResult]);
-
-  const addressArgItems = useMemo(() => {
-    try {
-      if (!functionItem?.inputs || !decoded?.args)
-        return [] as Array<{ key: string; address: string }>;
-      const items: Array<{ key: string; address: string }> = [];
-      functionItem.inputs.forEach((inp: any, i: number) => {
-        const type = inp?.type as string | undefined;
-        const argVal = (decoded as any)?.args?.[i];
-        if (!type) return;
-        if (type === "address") {
-          if (typeof argVal === "string" && argVal.startsWith("0x")) {
-            items.push({ key: `${i}`, address: argVal.toLowerCase() });
-          }
-        } else if (type === "address[]" && Array.isArray(argVal)) {
-          argVal.forEach((addr: any, j: number) => {
-            if (typeof addr === "string" && addr.startsWith("0x")) {
-              items.push({ key: `${i}.${j}`, address: addr.toLowerCase() });
-            }
-          });
-        }
-      });
-      return items;
-    } catch {
-      return [] as Array<{ key: string; address: string }>;
-    }
-  }, [functionItem, decoded]);
-
-  const uniqueArgAddresses = useMemo(() => {
-    return Array.from(new Set(addressArgItems.map((i) => i.address)));
-  }, [addressArgItems]);
-
-  const { data: argEnsMap } = useQuery({
-    queryKey: ["ensArgNames", uniqueArgAddresses],
-    queryFn: async () => {
-      try {
-        const mainnetClient = createPublicClient({
-          chain: chains.mainnet,
-          transport: http(),
-        });
-        const entries = await Promise.all(
-          uniqueArgAddresses.map(async (addr) => {
-            try {
-              const name = await mainnetClient.getEnsName({
-                address: addr as `0x${string}`,
-              });
-              return [addr, name] as const;
-            } catch {
-              return [addr, null] as const;
-            }
-          })
-        );
-        const map: Record<string, string | null> = {};
-        for (const [addr, name] of entries) map[addr] = name;
-        return map;
-      } catch {
-        return {} as Record<string, string | null>;
-      }
-    },
-    enabled: uniqueArgAddresses.length > 0,
-  });
-
-  const renderAddressLink = (
-    address: string,
-    className?: string,
-    ens?: string | null
-  ) => {
-    return <Address address={address} className={className} mono />;
-  };
-
-  const renderArgValue = (value: any, type?: string) => {
-    if (
-      type === "address" &&
-      typeof value === "string" &&
-      value.startsWith("0x")
-    ) {
-      const name = argEnsMap?.[value.toLowerCase()] || null;
-      return renderAddressLink(value, "font-mono break-all", name);
-    }
-    if (type === "address[]" && Array.isArray(value)) {
-      return (
-        <div className="space-y-1">
-          {value.map((addr: any, j: number) => {
-            if (typeof addr === "string" && addr.startsWith("0x")) {
-              const name = argEnsMap?.[addr.toLowerCase()] || null;
-              return (
-                <div key={j}>
-                  {renderAddressLink(addr, "font-mono break-all", name)}
-                </div>
-              );
-            }
-            return <span key={j}>{String(addr)}</span>;
-          })}
-        </div>
-      );
-    }
-    if (typeof value === "bigint") return value.toString();
-    if (typeof value === "string") {
-      return value.startsWith("0x") ? (
-        <span className="font-mono break-all">{value}</span>
-      ) : (
-        <span>{value}</span>
-      );
-    }
-    if (Array.isArray(value) || (value && typeof value === "object")) {
-      return (
-        <pre className="whitespace-pre-wrap break-words">
-          {stringifyWithBigInt(value)}
-        </pre>
-      );
-    }
-    return <span>{String(value)}</span>;
-  };
 
   const { data: names, isLoading: isNamesLoading } = useQuery({
     queryKey: [
@@ -397,8 +216,7 @@ export function SendTxModal({
     },
   });
 
-  const isAggregateLoading =
-    isChainIdLoading || isAbiLoadLoading || isNamesLoading;
+  const isAggregateLoading = isChainIdLoading || isNamesLoading;
   const controlsDisabled = isSubmitting || isAggregateLoading;
 
   const handleApprove = async () => {
@@ -458,43 +276,10 @@ export function SendTxModal({
             </div>
             {isBatchCall ? (
               <>
-                <div className="text-sm text-muted-foreground">Batch Calls</div>
-                <div className="text-sm">
-                  <div className="font-medium text-foreground">
-                    {transactions.length} transactions
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    {transactions.filter((tx: BaseTransaction) => tx.to).length}{" "}
-                    contract calls,{" "}
-                    {
-                      transactions.filter((tx: BaseTransaction) => !tx.to)
-                        .length
-                    }{" "}
-                    contract creations
-                  </div>
-                </div>
                 <div className="text-sm text-muted-foreground">Total Value</div>
                 <div className="text-sm">{totalValueEth} ETH</div>
               </>
-            ) : (
-              <>
-                <div className="text-sm text-muted-foreground">To</div>
-                <div className="text-sm break-all">
-                  <div>
-                    {typeof to === "string" && to.startsWith("0x") ? (
-                      <Address address={to} />
-                    ) : (
-                      to
-                    )}{" "}
-                    {abiLoadResult?.contractResult?.name
-                      ? `(${abiLoadResult.contractResult.name})`
-                      : null}
-                  </div>
-                </div>
-                <div className="text-sm text-muted-foreground">Value</div>
-                <div className="text-sm">{formatEther(totalValue)} ETH</div>
-              </>
-            )}
+            ) : null}
             <div className="text-sm text-muted-foreground">Chain</div>
             <div className="text-sm break-all">
               <div className="text-foreground" title={chainId?.toString()}>
@@ -504,128 +289,49 @@ export function SendTxModal({
           </div>
 
           {/* Show batch call details */}
-          {isBatchCall && transactions.length > 0 && (
+          {isBatchCall && calls.length > 0 && (
             <div className="space-y-3">
               <div className="text-sm font-medium text-foreground">
-                Transaction Details
+                Transaction Details ({calls.length} calls)
               </div>
-              <div className="space-y-2 max-h-40 overflow-y-auto">
-                {transactions.map((tx: BaseTransaction, index: number) => {
-                  const txTo = tx.to || "(contract creation)";
-                  const txValue = tx.value ?? "0x0";
-                  const txValueEth = isHex(txValue)
-                    ? formatEther(hexToBigInt(txValue))
-                    : "0";
-                  const txData = tx.data || tx.input || "0x";
-
-                  return (
-                    <div
-                      key={(tx as BatchCall).id ?? index}
-                      className="border rounded-md p-3 bg-muted/20"
-                    >
-                      <div className="grid grid-cols-[60px_1fr] gap-x-2 gap-y-1 text-xs">
-                        <div className="text-muted-foreground">
-                          #{index + 1}
-                        </div>
-                        <div className="font-mono break-all">
-                          {typeof txTo === "string" && txTo.startsWith("0x") ? (
-                            <Address address={txTo} className="text-xs" />
-                          ) : (
-                            txTo
-                          )}
-                        </div>
-                        <div className="text-muted-foreground">Value:</div>
-                        <div>{txValueEth} ETH</div>
-                        <div className="text-muted-foreground">Data:</div>
-                        <div className="font-mono break-all">
-                          {txData === "0x"
-                            ? "0x"
-                            : `${txData.slice(0, 10)}...${txData.slice(-8)}`}
-                        </div>
-                      </div>
+              <div className="space-y-5">
+                {calls.map((tx: BaseTransaction, index: number) => (
+                  <div
+                    key={(tx as BatchCall).id ?? index}
+                    className="space-y-3"
+                  >
+                    <div className="text-sm font-medium text-foreground">
+                      Call #{index + 1}
                     </div>
-                  );
-                })}
+                    <CallDecoder
+                      call={{
+                        to: tx.to,
+                        data: tx.data || tx.input,
+                        value: tx.value,
+                      }}
+                      chain={chain}
+                    />
+                  </div>
+                ))}
               </div>
             </div>
           )}
 
-          <div>
-            {isAbiLoadLoading ? (
-              <div className="space-y-3">
-                <Skeleton className="h-3 w-full" />
-                <Skeleton className="h-16 w-full" />
+          {!isBatchCall && (
+            <div>
+              <div className="text-sm font-medium text-foreground mb-2">
+                Transaction Details
               </div>
-            ) : decoded ? (
-              <>
-                <div className="space-y-2">
-                  <div className="text-sm">
-                    <span className="font-medium text-foreground">
-                      {decoded.functionName}
-                    </span>
-                    <span className="text-muted-foreground">
-                      {"("}
-                      {(functionItem?.inputs || [])
-                        .map((inp: any, i: number) =>
-                          [inp?.type || "unknown", inp?.name || `arg${i}`].join(
-                            " "
-                          )
-                        )
-                        .join(", ")}
-                      {")"}
-                    </span>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  {(functionItem?.inputs?.length || 0) > 0 ? (
-                    <div className="divide-y divide-border rounded-md border">
-                      {(decoded.args || []).map((arg: any, i: number) => {
-                        const input = (functionItem?.inputs as any)?.[i] || {};
-                        const label = input?.name || `arg${i}`;
-                        const type = input?.type || "unknown";
-                        return (
-                          <div key={i} className="py-2">
-                            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                              {label}
-                              <span className="ml-1 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
-                                {type}
-                              </span>
-                            </div>
-                            <div className="mt-1 text-xs text-foreground break-words">
-                              {renderArgValue(arg, type)}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <pre className="whitespace-pre font-mono text-muted-foreground text-[10px]">
-                      {stringifyWithBigInt(decoded)}
-                    </pre>
-                  )}
-                </div>
-              </>
-            ) : (
-              <div>
-                <pre
-                  className={cn(
-                    "whitespace-pre-wrap font-mono text-muted-foreground break-words",
-                    !showMoreDecoded && "line-clamp-2"
-                  )}
-                >
-                  {dataHex}
-                </pre>
-                <div>
-                  <button
-                    className="hover:underline text-blue-500"
-                    onClick={() => setShowMoreDecoded(!showMoreDecoded)}
-                  >
-                    {showMoreDecoded ? "Show less" : "Show more"}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+              <CallDecoder
+                call={{
+                  to: primaryTransaction.to,
+                  data: primaryTransaction.data || primaryTransaction.input,
+                  value: primaryTransaction.value,
+                }}
+                chain={chain}
+              />
+            </div>
+          )}
         </div>
       </div>
     </RequestModal>
