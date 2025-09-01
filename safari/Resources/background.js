@@ -113,7 +113,8 @@ async function handleWalletRequest(message, sender, sendResponse) {
       case "wallet_connect":
       case "eth_signTypedData_v4":
       case "personal_sign":
-      case "eth_sendTransaction": {
+      case "eth_sendTransaction":
+      case "wallet_sendCalls": {
         // Show in-page modal first; complete after approval
         sendResponse({ pending: true });
         break;

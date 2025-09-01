@@ -18,6 +18,49 @@ import * as chains from "viem/chains";
 import { RequestModal } from "@/components/RequestModal";
 import { cn } from "@/lib/utils";
 
+// Transaction types
+interface BaseTransaction {
+  to?: string;
+  from?: string;
+  value?: string;
+  data?: string;
+  input?: string;
+  gas?: string;
+  gasPrice?: string;
+  maxFeePerGas?: string;
+  maxPriorityFeePerGas?: string;
+  nonce?: string;
+}
+
+interface SingleTransaction extends BaseTransaction {}
+
+interface BatchCall extends BaseTransaction {
+  id?: number;
+}
+
+interface WalletSendCallsParams {
+  calls: BatchCall[];
+  from?: string;
+  [key: string]: any;
+}
+
+type TransactionParams =
+  | [SingleTransaction] // eth_sendTransaction
+  | [WalletSendCallsParams]; // wallet_sendCalls
+
+// Type guard functions
+function isWalletSendCalls(
+  params: TransactionParams
+): params is [WalletSendCallsParams] {
+  return params.length > 0 && "calls" in params[0];
+}
+
+function isSingleTransaction(
+  params: TransactionParams
+): params is [SingleTransaction] {
+  return params.length > 0 && !("calls" in params[0]);
+}
+
 function stringifyWithBigInt(value: unknown) {
   return JSON.stringify(
     value,
@@ -28,30 +71,77 @@ function stringifyWithBigInt(value: unknown) {
 
 type SendTxModalProps = {
   host: string;
-  tx: Record<string, any>;
+  method: "eth_sendTransaction" | "wallet_sendCalls";
+  params: TransactionParams;
   onApprove: () => void;
   onReject: () => void;
 };
 
 export function SendTxModal({
   host,
-  tx,
+  method,
+  params,
   onApprove,
   onReject,
 }: SendTxModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showCopied, setShowCopied] = useState(false);
-  const to = useMemo(() => tx.to || "(contract creation)", [tx]);
-  const from = useMemo(() => tx.from || "", [tx]);
-  const rawValue = useMemo(() => tx.value ?? "0x0", [tx]);
-  const valueEth = useMemo(() => {
-    return isHex(rawValue) ? formatEther(hexToBigInt(rawValue)) : "0";
-  }, [rawValue]);
+
+  // Detect if this is a batch call or single transaction using type guards
+  const isBatchCall = method === "wallet_sendCalls";
+
+  // Extract transaction data with proper typing
+  const transactions = useMemo(() => {
+    if (isWalletSendCalls(params)) {
+      // wallet_sendCalls: params[0] contains {calls: [...]}
+      const batchParams = params[0];
+      if (batchParams.calls && Array.isArray(batchParams.calls)) {
+        return batchParams.calls.map(
+          (call: BatchCall, index: number): BatchCall => ({
+            ...call,
+            id: index,
+            from: batchParams.from || "",
+          })
+        );
+      }
+      return [] as BatchCall[];
+    } else if (isSingleTransaction(params)) {
+      // eth_sendTransaction: params[0] is the transaction object
+      const singleTx = params[0];
+      return [singleTx || ({} as SingleTransaction)] as SingleTransaction[];
+    }
+    return [] as BaseTransaction[];
+  }, [isBatchCall, params]);
+
+  // Calculate total value for batch calls
+  const totalValue = useMemo(() => {
+    return transactions.reduce((sum: bigint, tx: BaseTransaction) => {
+      const value = tx.value ?? "0x0";
+      return sum + (isHex(value) ? hexToBigInt(value) : 0n);
+    }, 0n);
+  }, [transactions]);
+
+  const totalValueEth = useMemo(() => {
+    return formatEther(totalValue);
+  }, [totalValue]);
+
+  // Primary transaction for single transaction operations
+  const primaryTransaction = useMemo(
+    () => transactions[0] || ({} as BaseTransaction),
+    [transactions]
+  );
+
+  // Extract from address
+  const from = useMemo(
+    () => primaryTransaction.from || "",
+    [primaryTransaction]
+  );
+
   const [showMoreDecoded, setShowMoreDecoded] = useState(false);
 
   useEffect(() => {
-    console.log("tx", tx);
-  }, [tx]);
+    console.log("method:", method, "params:", params);
+  }, [method, params]);
 
   const {
     data: chainId,
@@ -77,6 +167,11 @@ export function SendTxModal({
       (chain) => chain.id === chainId
     ) as chains.Chain;
   }, [chainId]);
+
+  const to = useMemo(
+    () => primaryTransaction.to || "(contract creation)",
+    [primaryTransaction]
+  );
 
   const {
     data: abiLoadResult,
@@ -113,16 +208,18 @@ export function SendTxModal({
         return null;
       }
     },
-    enabled: Boolean(chain && to),
+    enabled: Boolean(chain && to && !isBatchCall), // Only load ABI for single transactions
   });
 
   const dataHex: string = useMemo(() => {
     return (
-      (typeof tx.data === "string" && tx.data) ||
-      (typeof tx.input === "string" && tx.input) ||
+      (typeof primaryTransaction.data === "string" &&
+        primaryTransaction.data) ||
+      (typeof primaryTransaction.input === "string" &&
+        primaryTransaction.input) ||
       "0x"
     );
-  }, [tx]);
+  }, [primaryTransaction]);
 
   const decoded = useMemo(() => {
     if (!dataHex || dataHex === "0x") return null;
@@ -325,13 +422,18 @@ export function SendTxModal({
 
   return (
     <RequestModal
-      primaryButtonTitle="Send"
+      primaryButtonTitle={isBatchCall ? "Send Batch" : "Send"}
       onPrimary={handleApprove}
       onReject={onReject}
       isSubmitting={isSubmitting}
-      address={from}
+      address={
+        isBatchCall && isWalletSendCalls(params)
+          ? params[0].from || ""
+          : primaryTransaction.from || ""
+      }
       footerChildren={
-        dataHex !== "0x" && (
+        dataHex !== "0x" &&
+        !isBatchCall && (
           <div className="flex w-full justify-center">
             <Button
               variant="ghost"
@@ -354,21 +456,45 @@ export function SendTxModal({
             <div className="text-sm break-all">
               <div className="font-medium text-foreground">{host}</div>
             </div>
-            <div className="text-sm text-muted-foreground">To</div>
-            <div className="text-sm break-all">
-              <div>
-                {typeof to === "string" && to.startsWith("0x") ? (
-                  <Address address={to} />
-                ) : (
-                  to
-                )}{" "}
-                {abiLoadResult?.contractResult?.name
-                  ? `(${abiLoadResult.contractResult.name})`
-                  : null}
-              </div>
-            </div>
-            <div className="text-sm text-muted-foreground">Value</div>
-            <div className="text-sm">{valueEth} ETH</div>
+            {isBatchCall ? (
+              <>
+                <div className="text-sm text-muted-foreground">Batch Calls</div>
+                <div className="text-sm">
+                  <div className="font-medium text-foreground">
+                    {transactions.length} transactions
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {transactions.filter((tx: BaseTransaction) => tx.to).length}{" "}
+                    contract calls,{" "}
+                    {
+                      transactions.filter((tx: BaseTransaction) => !tx.to)
+                        .length
+                    }{" "}
+                    contract creations
+                  </div>
+                </div>
+                <div className="text-sm text-muted-foreground">Total Value</div>
+                <div className="text-sm">{totalValueEth} ETH</div>
+              </>
+            ) : (
+              <>
+                <div className="text-sm text-muted-foreground">To</div>
+                <div className="text-sm break-all">
+                  <div>
+                    {typeof to === "string" && to.startsWith("0x") ? (
+                      <Address address={to} />
+                    ) : (
+                      to
+                    )}{" "}
+                    {abiLoadResult?.contractResult?.name
+                      ? `(${abiLoadResult.contractResult.name})`
+                      : null}
+                  </div>
+                </div>
+                <div className="text-sm text-muted-foreground">Value</div>
+                <div className="text-sm">{formatEther(totalValue)} ETH</div>
+              </>
+            )}
             <div className="text-sm text-muted-foreground">Chain</div>
             <div className="text-sm break-all">
               <div className="text-foreground" title={chainId?.toString()}>
@@ -376,6 +502,53 @@ export function SendTxModal({
               </div>
             </div>
           </div>
+
+          {/* Show batch call details */}
+          {isBatchCall && transactions.length > 0 && (
+            <div className="space-y-3">
+              <div className="text-sm font-medium text-foreground">
+                Transaction Details
+              </div>
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {transactions.map((tx: BaseTransaction, index: number) => {
+                  const txTo = tx.to || "(contract creation)";
+                  const txValue = tx.value ?? "0x0";
+                  const txValueEth = isHex(txValue)
+                    ? formatEther(hexToBigInt(txValue))
+                    : "0";
+                  const txData = tx.data || tx.input || "0x";
+
+                  return (
+                    <div
+                      key={(tx as BatchCall).id ?? index}
+                      className="border rounded-md p-3 bg-muted/20"
+                    >
+                      <div className="grid grid-cols-[60px_1fr] gap-x-2 gap-y-1 text-xs">
+                        <div className="text-muted-foreground">
+                          #{index + 1}
+                        </div>
+                        <div className="font-mono break-all">
+                          {typeof txTo === "string" && txTo.startsWith("0x") ? (
+                            <Address address={txTo} className="text-xs" />
+                          ) : (
+                            txTo
+                          )}
+                        </div>
+                        <div className="text-muted-foreground">Value:</div>
+                        <div>{txValueEth} ETH</div>
+                        <div className="text-muted-foreground">Data:</div>
+                        <div className="font-mono break-all">
+                          {txData === "0x"
+                            ? "0x"
+                            : `${txData.slice(0, 10)}...${txData.slice(-8)}`}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div>
             {isAbiLoadLoading ? (

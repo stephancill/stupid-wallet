@@ -59,6 +59,7 @@
         case "eth_signTypedData_v4":
         case "eth_sendTransaction":
         case "personal_sign":
+        case "wallet_sendCalls":
           return this._handleRequest({ method, params });
 
         case "eth_getBlockByNumber":

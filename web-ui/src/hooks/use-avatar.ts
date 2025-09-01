@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+// @ts-ignore - Module has no type declarations
 import { createIcon } from "@download/blockies";
 import { useENS } from "./use-ens";
 
