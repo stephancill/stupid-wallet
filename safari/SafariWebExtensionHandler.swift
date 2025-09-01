@@ -172,6 +172,12 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         case "wallet_sendCalls":
             let params = messageDict["params"] as? [Any]
             return handleWalletSendCalls(params: params)
+        case "wallet_getCapabilities":
+            let params = messageDict["params"] as? [Any]
+            return handleWalletGetCapabilities(params: params)
+        case "wallet_getCallsStatus":
+            let params = messageDict["params"] as? [Any]
+            return handleWalletGetCallsStatus(params: params)
         default:
             logger.warning("Unsupported method: \(method)")
             return ["error": "Method \(method) not supported"]
@@ -685,6 +691,216 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         } catch {
             logger.error("wallet_sendCalls failed: \(String(describing: error))")
             return ["error": "Failed to process batch calls: \(error.localizedDescription)"]
+        }
+    }
+
+    private func handleWalletGetCapabilities(params: [Any]?) -> [String: Any] {
+        // Check if user has authorized a connection (has wallet address)
+        guard let walletAddress = getSavedAddress() else {
+            logger.info("wallet_getCapabilities: No wallet address found - user not authorized")
+            return ["error": ["code": 4100, "message": "Unauthorized"]]
+        }
+
+        logger.info("wallet_getCapabilities: Processing request for address \(walletAddress)")
+
+        // Parse parameters: [address, optional chainIds array]
+        var requestedAddress: String? = nil
+        var requestedChainIds: [String]? = nil
+
+        if let params = params, params.count >= 1 {
+            requestedAddress = params[0] as? String
+            if params.count >= 2 {
+                requestedChainIds = params[1] as? [String]
+            }
+        }
+
+        // Validate the requested address matches the authorized address
+        if let requested = requestedAddress, requested.caseInsensitiveCompare(walletAddress) != .orderedSame {
+            logger.warning("wallet_getCapabilities: Requested address \(requested) does not match authorized address \(walletAddress)")
+            return ["error": ["code": 4100, "message": "Unauthorized"]]
+        }
+
+        // Determine which chain IDs to return capabilities for
+        var chainIdsToQuery: [String] = []
+        if let requested = requestedChainIds {
+            // Filter to only supported chains
+            for chainIdHex in requested {
+                if isChainSupported(chainIdHex) {
+                    chainIdsToQuery.append(chainIdHex.lowercased())
+                }
+            }
+            // If none of the requested chains are supported, return error
+            if chainIdsToQuery.isEmpty {
+                return ["error": "No supported chains found in request"]
+            }
+        } else {
+            // If no chain IDs specified, return capabilities for current chain
+            chainIdsToQuery = [Constants.Networks.getCurrentChainIdHex()]
+        }
+
+        // Build capabilities response
+        var capabilities: [String: [String: [String: Any]]] = [:]
+
+        // Add capabilities for each requested chain
+        for chainIdHex in chainIdsToQuery {
+            var chainCapabilities: [String: [String: Any]] = [:]
+
+            // Add atomic capability (since wallet_sendCalls is supported)
+            chainCapabilities["atomic"] = [
+                "supported": true
+            ]
+
+            capabilities[chainIdHex] = chainCapabilities
+        }
+
+        // Add cross-chain capabilities (0x0 represents capabilities across all chains)
+        var globalCapabilities: [String: [String: Any]] = [:]
+        globalCapabilities["atomic"] = [
+            "supported": true
+        ]
+        capabilities["0x0"] = globalCapabilities
+
+        logger.info("wallet_getCapabilities: Returning capabilities for chains: \(chainIdsToQuery)")
+        return ["result": capabilities]
+    }
+
+    private func handleWalletGetCallsStatus(params: [Any]?) -> [String: Any] {
+        guard let params = params, params.count >= 1,
+              let callBundleId = params[0] as? String else {
+            return ["error": "Invalid wallet_getCallsStatus params - missing call bundle ID"]
+        }
+
+        logger.info("wallet_getCallsStatus: Processing request for call bundle ID: \(callBundleId)")
+
+        // The callBundleId should be the transaction hash from wallet_sendCalls
+        let (rpcURL, chainIdBig) = Constants.Networks.currentNetwork()
+        let web3 = Web3(rpcURL: rpcURL)
+
+        do {
+            // Convert hex string to bytes for EthereumData
+            guard let txHashData = Data(hexString: callBundleId) else {
+                logger.error("Invalid transaction hash format: \(callBundleId)")
+                return ["error": "Invalid transaction hash format"]
+            }
+
+            // Get transaction receipt
+            let receiptPromise = web3.eth.getTransactionReceipt(transactionHash: EthereumData([UInt8](txHashData)))
+            let receiptResult = awaitPromise(receiptPromise)
+
+            switch receiptResult {
+            case .success(let receipt):
+                guard let receipt = receipt else {
+                    // Transaction not found or not mined yet
+                    return ["result": [
+                        "version": "2.0.0",
+                        "chainId": Constants.Networks.getCurrentChainIdHex(),
+                        "id": callBundleId,
+                        "status": 100, // Batch has been received but not completed onchain
+                        "atomic": true
+                    ]]
+                }
+
+                // Get transaction details for additional info
+                let txPromise = web3.eth.getTransactionByHash(blockHash: EthereumData([UInt8](txHashData)))
+                let txResult = awaitPromise(txPromise)
+
+                var transactionHash: String
+                var blockHash: String
+                var blockNumber: String
+                var gasUsed: String
+                var logs: [[String: Any]] = []
+                var status: Int
+
+                switch txResult {
+                case .success(let tx):
+                    transactionHash = tx!.hash.hex()
+                    blockHash = receipt.blockHash.hex()
+                    blockNumber = receipt.blockNumber.hex()
+                    gasUsed = receipt.gasUsed.hex()
+
+                    // Format logs
+                    for log in receipt.logs {
+                        var logDict: [String: Any] = [
+                            "address": log.address.hex(eip55: true),
+                            "topics": log.topics.map { $0.hex() },
+                            "data": log.data.hex()
+                        ]
+                        if let logIndex = log.logIndex {
+                            logDict["logIndex"] = logIndex.hex()
+                        }
+                        if let transactionIndex = log.transactionIndex {
+                            logDict["transactionIndex"] = transactionIndex.hex()
+                        }
+                        if let transactionHash = log.transactionHash {
+                            logDict["transactionHash"] = transactionHash.hex()
+                        }
+                        if let blockHash = log.blockHash {
+                            logDict["blockHash"] = blockHash.hex()
+                        }
+                        if let blockNumber = log.blockNumber {
+                            logDict["blockNumber"] = blockNumber.hex()
+                        }
+                        logs.append(logDict)
+                    }
+
+                    // Determine status code based on receipt status
+                    // receipt.status is EthereumQuantity? (1 for success, 0 for failure)
+                    if let statusValue = receipt.status, statusValue.quantity == 1 {
+                        status = 200 // Batch has been included onchain without reverts
+                    } else {
+                        status = 500 // Batch reverted completely
+                    }
+
+                case .failure:
+                    // Transaction found but couldn't get details
+                    transactionHash = callBundleId
+                    blockHash = receipt.blockHash.hex()
+                    blockNumber = receipt.blockNumber.hex()
+                    gasUsed = receipt.gasUsed.hex()
+                    // receipt.status is EthereumQuantity? (1 for success, 0 for failure)
+                    status = (receipt.status?.quantity == 1) ? 200 : 500
+                }
+
+                // Build receipt object
+                var receiptDict: [String: Any] = [
+                    "logs": logs,
+                    "status": (receipt.status?.quantity == 1) ? "0x1" : "0x0",
+                    "blockHash": blockHash,
+                    "blockNumber": blockNumber,
+                    "gasUsed": gasUsed,
+                    "transactionHash": transactionHash
+                ]
+
+                // Add optional capability-specific metadata if needed
+                // For now, we'll keep it simple
+
+                let result: [String: Any] = [
+                    "version": "1.0",
+                    "chainId": Constants.Networks.getCurrentChainIdHex(),
+                    "id": callBundleId,
+                    "status": status,
+                    "atomic": true, // Our EIP-7702 implementation is atomic
+                    "receipts": [receiptDict]
+                ]
+
+                logger.info("wallet_getCallsStatus: Returning status \(status) for call bundle \(callBundleId)")
+                return ["result": result]
+
+            case .failure(let error):
+                logger.error("Failed to get transaction receipt for \(callBundleId): \(error.localizedDescription)")
+
+                // Return pending status if transaction not found
+                return ["result": [
+                    "version": "2.0.0",
+                    "chainId": Constants.Networks.getCurrentChainIdHex(),
+                    "id": callBundleId,
+                    "status": 100, // Batch has been received but not completed onchain
+                    "atomic": true
+                ]]
+            }
+        } catch {
+            logger.error("wallet_getCallsStatus failed: \(error.localizedDescription)")
+            return ["error": "Failed to get calls status: \(error.localizedDescription)"]
         }
     }
 

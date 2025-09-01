@@ -56,10 +56,12 @@
 
         case "eth_blockNumber":
         case "wallet_addEthereumChain":
+        case "wallet_getCapabilities":
         case "eth_signTypedData_v4":
         case "eth_sendTransaction":
         case "personal_sign":
         case "wallet_sendCalls":
+        case "wallet_getCallsStatus":
           return this._handleRequest({ method, params });
 
         case "eth_getBlockByNumber":

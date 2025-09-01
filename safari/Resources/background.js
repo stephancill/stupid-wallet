@@ -95,6 +95,8 @@ async function handleWalletRequest(message, sender, sendResponse) {
       case "eth_chainId":
       case "eth_blockNumber":
       case "wallet_addEthereumChain":
+      case "wallet_getCapabilities":
+      case "wallet_getCallsStatus":
       case "wallet_switchEthereumChain":
       case "wallet_disconnect": {
         const native = await callNative({
