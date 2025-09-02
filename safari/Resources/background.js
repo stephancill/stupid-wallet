@@ -95,6 +95,8 @@ async function handleWalletRequest(message, sender, sendResponse) {
       case "eth_chainId":
       case "eth_blockNumber":
       case "wallet_addEthereumChain":
+      case "wallet_getCapabilities":
+      case "wallet_getCallsStatus":
       case "wallet_switchEthereumChain":
       case "wallet_disconnect": {
         const native = await callNative({
@@ -113,7 +115,8 @@ async function handleWalletRequest(message, sender, sendResponse) {
       case "wallet_connect":
       case "eth_signTypedData_v4":
       case "personal_sign":
-      case "eth_sendTransaction": {
+      case "eth_sendTransaction":
+      case "wallet_sendCalls": {
         // Show in-page modal first; complete after approval
         sendResponse({ pending: true });
         break;

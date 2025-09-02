@@ -6,7 +6,6 @@
 //
 
 import SafariServices
-import os.log
 import Web3
 import Web3PromiseKit
 import PromiseKit
@@ -18,7 +17,19 @@ import Web3ContractABI
 
 class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     private let appGroupId = Constants.appGroupId
-    private let logger = Logger(subsystem: "co.za.stephancill.stupid-wallet", category: "SafariWebExtensionHandler")
+
+    // EIP-7702 constants
+    private let simple7702AccountAddress = "0xe6Cae83BdE06E4c305530e199D7217f42808555B"
+
+    // EIP-7702 Authorization structure
+    struct EIP7702Authorization {
+        let chainId: BigUInt
+        let address: String // Using string representation for now
+        let nonce: BigUInt
+        let r: Data
+        let s: Data
+        let v: UInt8
+    }
 
     struct AppMetadata {
         let domain: String?
@@ -46,8 +57,6 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         // Extract app metadata from request context and message
         let appMetadata = extractAppMetadata(from: request, message: message)
 
-        os_log(.default, "Received message from browser.runtime.sendNativeMessage: %@ (profile: %@, domain: %@)", String(describing: message), profile?.uuidString ?? "none", appMetadata.domain ?? "unknown")
-
         let response = NSExtensionItem()
         let responseMessage = handleWalletRequest(message, appMetadata: appMetadata)
         
@@ -67,7 +76,6 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             if let domain = siteMetadata["domain"] as? String,
                let url = siteMetadata["url"] as? String,
                let scheme = siteMetadata["scheme"] as? String {
-                logger.info("Extracted site metadata from message: domain=\(domain), url=\(url)")
                 return AppMetadata(
                     domain: domain,
                     uri: url,
@@ -83,8 +91,7 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         if let attachments = request?.attachments {
             for attachment in attachments {
                 if attachment.hasItemConformingToTypeIdentifier("public.url"),
-                   let urlData = try? attachment.loadItem(forTypeIdentifier: "public.url") as? URL {
-                    logger.info("Extracted site metadata from attachments: domain=\(urlData.host ?? "nil"), url=\(urlData.absoluteString)")
+                   let urlData = attachment.loadItem(forTypeIdentifier: "public.url") as? URL {
                     return AppMetadata(
                         domain: urlData.host,
                         uri: urlData.absoluteString,
@@ -98,7 +105,6 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         if let userInfo = request?.userInfo {
             if let urlString = userInfo["url"] as? String,
                let url = URL(string: urlString) {
-                logger.info("Extracted site metadata from userInfo: domain=\(url.host ?? "nil"), url=\(url.absoluteString)")
                 return AppMetadata(
                     domain: url.host,
                     uri: url.absoluteString,
@@ -108,24 +114,20 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         }
 
         // Try to get URL from NSExtensionContext if available
-        if let context = request?.userInfo?["NSExtensionContext"] as? NSExtensionContext {
+        if request?.userInfo?["NSExtensionContext"] as? NSExtensionContext != nil {
             // This is a fallback - in practice, Safari might not provide this
             // But it's worth trying for future compatibility
         }
 
         // Final fallback to unknown
-        logger.info("No site metadata found, falling back to unknown domain")
         return AppMetadata(domain: nil, uri: nil, scheme: nil)
     }
 
     private func handleWalletRequest(_ message: Any?, appMetadata: AppMetadata) -> [String: Any] {
         guard let messageDict = message as? [String: Any],
               let method = messageDict["method"] as? String else {
-            logger.error("Invalid message format")
             return ["error": "Invalid message format"]
         }
-
-        logger.info("Handling wallet request: \(method)")
 
         switch method {
         case "eth_requestAccounts":
@@ -156,8 +158,16 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         case "wallet_switchEthereumChain":
             let params = messageDict["params"] as? [Any]
             return handleSwitchEthereumChain(params: params)
+        case "wallet_sendCalls":
+            let params = messageDict["params"] as? [Any]
+            return handleWalletSendCalls(params: params)
+        case "wallet_getCapabilities":
+            let params = messageDict["params"] as? [Any]
+            return handleWalletGetCapabilities(params: params)
+        case "wallet_getCallsStatus":
+            let params = messageDict["params"] as? [Any]
+            return handleWalletGetCallsStatus(params: params)
         default:
-            logger.warning("Unsupported method: \(method)")
             return ["error": "Method \(method) not supported"]
         }
     }
@@ -191,16 +201,12 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     }
 
     private func handleBlockNumber() -> [String: Any] {
-        do {
-            let (rpcURL, _) = Constants.Networks.currentNetwork()
-            let web3 = Web3(rpcURL: rpcURL)
-            switch awaitPromise(web3.eth.blockNumber()) {
-            case .success(let num):
-                return ["result": num.hex()]
-            case .failure:
-                return ["error": "Failed to get block number"]
-            }
-        } catch {
+        let (rpcURL, _) = Constants.Networks.currentNetwork()
+        let web3 = Web3(rpcURL: rpcURL)
+        switch awaitPromise(web3.eth.blockNumber()) {
+        case .success(let num):
+            return ["result": num.hex()]
+        case .failure:
             return ["error": "Failed to get block number"]
         }
     }
@@ -208,10 +214,8 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     private func handleRequestAccounts() -> [String: Any] {
         let address = getSavedAddress()
         if let address = address {
-            logger.info("Returning address for eth_requestAccounts: \(address)")
             return ["result": [address]]
         } else {
-            logger.info("No address found, returning empty array")
             return ["result": []]
         }
     }
@@ -219,21 +223,17 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     private func handleWalletConnect(params: [Any]?, appMetadata: AppMetadata) -> [String: Any] {
         let address = getSavedAddress()
         guard let address = address else {
-            logger.info("No address found, returning empty array")
             return ["result": []]
         }
 
         // Parse request parameters
         var requestCapabilities: [String: Any]? = nil
         var requestedChainIds: [String]? = nil
-        var version: String = "1"
 
         if let dict = params?.first as? [String: Any] {
             requestCapabilities = dict["capabilities"] as? [String: Any]
             requestedChainIds = dict["chainIds"] as? [String]
-            if let ver = dict["version"] as? String {
-                version = ver
-            }
+            // Version is parsed but not used in current implementation
         }
 
         // Validate chain IDs if provided
@@ -262,7 +262,6 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
                     let siweResult = try handleSignInWithEthereum(params: siweParams, address: address, chainIds: supportedChainIds, appMetadata: appMetadata)
                     capabilities["signInWithEthereum"] = siweResult
                 } catch {
-                    logger.error("SIWE signing failed: \(error)")
                     return ["error": "SIWE signing failed"]
                 }
             }
@@ -270,7 +269,6 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
         account["capabilities"] = capabilities
 
-        logger.info("Returning wallet_connect response for address: \(address)")
         return ["result": [
             "accounts": [account],
             "chainIds": supportedChainIds
@@ -281,17 +279,14 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         // According to spec: revoke access to user account info and capabilities
         // In this implementation, we don't maintain persistent sessions beyond stored address
         // So we just return success - the app can clear its local state
-        logger.info("Handling wallet_disconnect - no persistent session to revoke")
         return ["result": true]
     }
 
     private func handleAccounts() -> [String: Any] {
         let address = getSavedAddress()
         if let address = address {
-            logger.info("Returning address for eth_accounts: \(address)")
             return ["result": [address]]
         } else {
-            logger.info("No address found, returning empty array")
             return ["result": []]
         }
     }
@@ -338,7 +333,6 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             let sigHex = "0x" + canonical.map { String(format: "%02x", $0) }.joined()
             return ["result": sigHex]
         } catch {
-            logger.error("Signing failed: \(String(describing: error))")
             return ["error": "Signing failed"]
         }
     }
@@ -366,7 +360,6 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             let sigHex = "0x" + canonical.map { String(format: "%02x", $0) }.joined()
             return ["result": sigHex]
         } catch {
-            logger.error("EIP-712 signing failed: \(String(describing: error))")
             return ["error": "Signing failed"]
         }
     }
@@ -402,6 +395,20 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             let fromAddr = try EthereumAddress(hex: fromHex, eip55: false)
             let toAddr = (toHex != nil && !(toHex!).isEmpty) ? (try? EthereumAddress(hex: toHex!, eip55: false)) : nil
 
+            // Check balance before proceeding with transaction
+            let networkName = Constants.Networks.chainName(forChainId: chainIdBig)
+
+            let currentBalance: BigUInt
+            switch awaitPromise(web3.eth.getBalance(address: fromAddr, block: .latest)) {
+            case .success(let balance):
+                currentBalance = balance.quantity
+                if currentBalance == 0 {
+                    return ["error": "Insufficient balance on \(networkName). Your account has 0 ETH. Please ensure you have funds on this network before sending transactions."]
+                }
+            case .failure(let error):
+                return ["error": "Failed to check account balance: \(error.localizedDescription)"]
+            }
+
             // Nonce
             let nonce: EthereumQuantity
             if let nonceHex = nonceHex, let n = BigUInt.fromHexQuantity(nonceHex) {
@@ -434,7 +441,7 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
             // Fees: prefer EIP-1559
             if let maxFee = BigUInt.fromHexQuantity(maxFeePerGasHex ?? ""), let maxPrio = BigUInt.fromHexQuantity(maxPriorityFeePerGasHex ?? "") {
-                txToSign.transactionType = .eip1559
+                txToSign.transactionType = EthereumTransaction.TransactionType.eip1559
                 txToSign.maxFeePerGas = EthereumQuantity(quantity: maxFee)
                 txToSign.maxPriorityFeePerGas = EthereumQuantity(quantity: maxPrio)
             } else {
@@ -448,6 +455,25 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
                     }
                 }
                 txToSign.gasPrice = legacyGasPrice
+            }
+
+            // Check if balance is sufficient for estimated transaction cost
+            let estimatedGasCost: BigUInt
+            let totalValue = weiValue  // Value being sent in the transaction
+            if let maxFee = BigUInt.fromHexQuantity(maxFeePerGasHex ?? ""), let maxPrio = BigUInt.fromHexQuantity(maxPriorityFeePerGasHex ?? "") {
+                // EIP-1559: use maxFeePerGas
+                estimatedGasCost = gasLimitQty * maxFee
+            } else {
+                // Legacy: use gasPrice
+                let gasPrice = txToSign.gasPrice?.quantity ?? BigUInt.zero
+                estimatedGasCost = gasLimitQty * gasPrice
+            }
+
+            let totalCost = estimatedGasCost + totalValue
+
+            if currentBalance < totalCost {
+                let shortfall = totalCost - currentBalance
+                return ["error": "Insufficient balance on \(networkName). Required: \(formatWeiToEth(totalCost)), Available: \(formatWeiToEth(currentBalance)), Shortfall: \(formatWeiToEth(shortfall))"]
             }
 
             // Data
@@ -512,7 +538,6 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
                 )
                 signedTx = signed
             } catch {
-                logger.error("Signing error: \(String(describing: error))")
                 return ["error": "Failed to sign transaction: \(error.localizedDescription)"]
             }
 
@@ -521,7 +546,6 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             case .success(let txHash):
                 return ["result": txHash.hex()]
             case .failure(let e):
-                logger.error("Broadcast failed: \(String(describing: e))")
                 return ["error": "Failed to send transaction: \(e.localizedDescription)"]
             }
         } catch {
@@ -532,15 +556,12 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     private func getSavedAddress() -> String? {
         let defaults = UserDefaults(suiteName: appGroupId)
         if defaults == nil {
-            logger.error("Failed to open UserDefaults for app group: \(self.appGroupId)")
             return nil
         }
         let address = defaults?.string(forKey: "walletAddress")
         if let address = address, !address.isEmpty {
-            logger.info("Loaded address from app group store")
             return address
         } else {
-            logger.info("No address stored under key 'walletAddress'")
             return nil
         }
     }
@@ -560,6 +581,343 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         return customNetworks[chainId] != nil
     }
 
+    private func handleWalletSendCalls(params: [Any]?) -> [String: Any] {
+        guard let params = params, let callsObj = params.first as? [String: Any] else {
+            return ["error": "Invalid wallet_sendCalls params"]
+        }
+
+        guard let calls = callsObj["calls"] as? [[String: Any]] else {
+            return ["error": "Missing calls array"]
+        }
+
+        // Extract version for response format (EIP-5792)
+        let version = callsObj["version"] as? Int ?? 1
+
+        guard let fromAddress = getSavedAddress() else {
+            return ["error": "No wallet address available"]
+        }
+
+        // Create addresses we'll need
+        let fromAddr = try! EthereumAddress(hex: fromAddress, eip55: false)
+
+        do {
+            let (rpcURL, chainIdBig) = Constants.Networks.currentNetwork()
+            let web3 = Web3(rpcURL: rpcURL)
+
+            // Check balance before proceeding with expensive operations
+            let networkName = Constants.Networks.chainName(forChainId: chainIdBig)
+
+            let currentBalance: BigUInt
+            switch awaitPromise(web3.eth.getBalance(address: fromAddr, block: .latest)) {
+            case .success(let balance):
+                currentBalance = balance.quantity
+                if currentBalance == 0 {
+                    return ["error": "Insufficient balance on \(networkName). Your account has 0 ETH. Please ensure you have funds on this network before sending transactions."]
+                }
+            case .failure(let error):
+                return ["error": "Failed to check account balance: \(error.localizedDescription)"]
+            }
+
+            let simple7702Addr = try EthereumAddress(hex: self.simple7702AccountAddress, eip55: false)
+
+            // Check if Simple7702Account is deployed on this chain
+            switch awaitPromise(web3.eth.getCode(address: simple7702Addr, block: .latest)) {
+            case .success(let code):
+                if code.bytes.isEmpty {
+                    return ["error": "Simple7702Account not deployed on this chain"]
+                }
+            case .failure:
+                return ["error": "Failed to check Simple7702Account deployment"]
+            }
+
+            // Parse calls and check which need authorization
+            var authorizationList: [EIP7702Authorization] = []
+            var batchCalls: [[String: Any]] = []
+
+            // Check if user's wallet needs delegation to Simple7702Account
+            var needsDelegation = false
+            switch awaitPromise(web3.eth.getCode(address: fromAddr, block: .latest)) {
+            case .success(let code):
+                if code.bytes.isEmpty {
+                    // Empty code - needs delegation
+                    needsDelegation = true
+                } else if code.bytes.count == 23 && code.bytes.starts(with: [0xef, 0x01, 0x00]) {
+                    // Check if already delegated to Simple7702Account
+                    let delegatedAddress = Array(code.bytes[3...]) // Skip 0xef0100 prefix
+                    let expectedAddress = simple7702Addr.rawAddress
+                    if delegatedAddress != expectedAddress {
+                        // Delegated to wrong address - needs re-delegation
+                        needsDelegation = true
+                    } else {
+                        // Already properly delegated
+                    }
+                } else {
+                    // Has code but not a delegation indicator - needs delegation to replace
+                    needsDelegation = true
+                }
+            case .failure:
+                return ["error": "Failed to check code for user's wallet"]
+            }
+
+            // Compute transaction nonce once (pending) and reuse across auth and tx
+            let txNonceEQ: EthereumQuantity
+            switch awaitPromise(web3.eth.getTransactionCount(address: fromAddr, block: .pending)) {
+            case .success(let n):
+                txNonceEQ = n
+            case .failure:
+                return ["error": "Failed to get nonce"]
+            }
+
+            if needsDelegation {
+                // Sign authorization to delegate user's wallet to Simple7702Account
+                let authorization = try signEIP7702Authorization(
+                    contractAddress: self.simple7702AccountAddress,
+                    chainId: chainIdBig,
+                    fromAddress: fromAddress,
+                    txNonce: txNonceEQ.quantity
+                )
+                authorizationList.append(authorization)
+            }
+
+            // Process batch calls (no authorization needed for target contracts)
+            for call in calls {
+                guard let targetHex = call["to"] as? String else {
+                    return ["error": "Missing 'to' field in call"]
+                }
+
+                // Add to batch calls
+                let valueHex = call["value"] as? String ?? "0x0"
+                let dataHex = call["data"] as? String ?? "0x"
+                batchCalls.append([
+                    "target": targetHex,
+                    "value": valueHex,
+                    "data": dataHex
+                ])
+            }
+
+            // Authorization summary
+            // if authorizationList.isEmpty {
+            //     No authorization needed - user's wallet already properly delegated to Simple7702Account
+            // } else {
+            //     1 authorization created to delegate user's wallet to Simple7702Account
+            // }
+
+            // Create executeBatch transaction
+            let result = try createExecuteBatchTransaction(
+                calls: batchCalls,
+                authorizations: authorizationList,
+                fromAddress: fromAddress,
+                chainIdBig: chainIdBig,
+                version: version,
+                currentBalance: currentBalance,
+                txNonce: txNonceEQ
+            )
+
+            return result
+
+        } catch {
+            return ["error": "Failed to process batch calls: \(error.localizedDescription)"]
+        }
+    }
+
+    private func handleWalletGetCapabilities(params: [Any]?) -> [String: Any] {
+        // Check if user has authorized a connection (has wallet address)
+        guard let walletAddress = getSavedAddress() else {
+            return ["error": ["code": 4100, "message": "Unauthorized"]]
+        }
+
+        // Parse parameters: [address, optional chainIds array]
+        var requestedAddress: String? = nil
+        var requestedChainIds: [String]? = nil
+
+        if let params = params, params.count >= 1 {
+            requestedAddress = params[0] as? String
+            if params.count >= 2 {
+                requestedChainIds = params[1] as? [String]
+            }
+        }
+
+        // Validate the requested address matches the authorized address
+        if let requested = requestedAddress, requested.caseInsensitiveCompare(walletAddress) != .orderedSame {
+            return ["error": ["code": 4100, "message": "Unauthorized"]]
+        }
+
+        // Determine which chain IDs to return capabilities for
+        var chainIdsToQuery: [String] = []
+        if let requested = requestedChainIds {
+            // Filter to only supported chains
+            for chainIdHex in requested {
+                if isChainSupported(chainIdHex) {
+                    chainIdsToQuery.append(chainIdHex.lowercased())
+                }
+            }
+            // If none of the requested chains are supported, return error
+            if chainIdsToQuery.isEmpty {
+                return ["error": "No supported chains found in request"]
+            }
+        } else {
+            // If no chain IDs specified, return capabilities for current chain
+            chainIdsToQuery = [Constants.Networks.getCurrentChainIdHex()]
+        }
+
+        // Build capabilities response
+        var capabilities: [String: [String: [String: Any]]] = [:]
+
+        // Add capabilities for each requested chain
+        for chainIdHex in chainIdsToQuery {
+            var chainCapabilities: [String: [String: Any]] = [:]
+
+            // Add atomic capability (since wallet_sendCalls is supported)
+            chainCapabilities["atomic"] = [
+                "supported": true
+            ]
+
+            capabilities[chainIdHex] = chainCapabilities
+        }
+
+        // Add cross-chain capabilities (0x0 represents capabilities across all chains)
+        var globalCapabilities: [String: [String: Any]] = [:]
+        globalCapabilities["atomic"] = [
+            "supported": true
+        ]
+        capabilities["0x0"] = globalCapabilities
+
+        return ["result": capabilities]
+    }
+
+    private func handleWalletGetCallsStatus(params: [Any]?) -> [String: Any] {
+        guard let params = params, params.count >= 1,
+              let callBundleId = params[0] as? String else {
+            return ["error": "Invalid wallet_getCallsStatus params - missing call bundle ID"]
+        }
+
+        // The callBundleId should be the transaction hash from wallet_sendCalls
+        let (rpcURL, chainIdBig) = Constants.Networks.currentNetwork()
+        let web3 = Web3(rpcURL: rpcURL)
+
+        do {
+            // Convert hex string to bytes for EthereumData
+            guard let txHashData = Data(hexString: callBundleId) else {
+                return ["error": "Invalid transaction hash format"]
+            }
+
+            // Get transaction receipt
+            let receiptPromise = web3.eth.getTransactionReceipt(transactionHash: EthereumData([UInt8](txHashData)))
+            let receiptResult = awaitPromise(receiptPromise)
+
+            switch receiptResult {
+            case .success(let receipt):
+                guard let receipt = receipt else {
+                    // Transaction not found or not mined yet
+                    return ["result": [
+                        "version": "2.0.0",
+                        "chainId": Constants.Networks.getCurrentChainIdHex(),
+                        "id": callBundleId,
+                        "status": 100, // Batch has been received but not completed onchain
+                        "atomic": true
+                    ]]
+                }
+
+                // Get transaction details for additional info
+                let txPromise = web3.eth.getTransactionByHash(blockHash: EthereumData([UInt8](txHashData)))
+                let txResult = awaitPromise(txPromise)
+
+                var transactionHash: String
+                var blockHash: String
+                var blockNumber: String
+                var gasUsed: String
+                var logs: [[String: Any]] = []
+                var status: Int
+
+                switch txResult {
+                case .success(let tx):
+                    transactionHash = tx!.hash.hex()
+                    blockHash = receipt.blockHash.hex()
+                    blockNumber = receipt.blockNumber.hex()
+                    gasUsed = receipt.gasUsed.hex()
+
+                    // Format logs
+                    for log in receipt.logs {
+                        var logDict: [String: Any] = [
+                            "address": log.address.hex(eip55: true),
+                            "topics": log.topics.map { $0.hex() },
+                            "data": log.data.hex()
+                        ]
+                        if let logIndex = log.logIndex {
+                            logDict["logIndex"] = logIndex.hex()
+                        }
+                        if let transactionIndex = log.transactionIndex {
+                            logDict["transactionIndex"] = transactionIndex.hex()
+                        }
+                        if let transactionHash = log.transactionHash {
+                            logDict["transactionHash"] = transactionHash.hex()
+                        }
+                        if let blockHash = log.blockHash {
+                            logDict["blockHash"] = blockHash.hex()
+                        }
+                        if let blockNumber = log.blockNumber {
+                            logDict["blockNumber"] = blockNumber.hex()
+                        }
+                        logs.append(logDict)
+                    }
+
+                    // Determine status code based on receipt status
+                    // receipt.status is EthereumQuantity? (1 for success, 0 for failure)
+                    if let statusValue = receipt.status, statusValue.quantity == 1 {
+                        status = 200 // Batch has been included onchain without reverts
+                    } else {
+                        status = 500 // Batch reverted completely
+                    }
+
+                case .failure:
+                    // Transaction found but couldn't get details
+                    transactionHash = callBundleId
+                    blockHash = receipt.blockHash.hex()
+                    blockNumber = receipt.blockNumber.hex()
+                    gasUsed = receipt.gasUsed.hex()
+                    // receipt.status is EthereumQuantity? (1 for success, 0 for failure)
+                    status = (receipt.status?.quantity == 1) ? 200 : 500
+                }
+
+                // Build receipt object
+                var receiptDict: [String: Any] = [
+                    "logs": logs,
+                    "status": (receipt.status?.quantity == 1) ? "0x1" : "0x0",
+                    "blockHash": blockHash,
+                    "blockNumber": blockNumber,
+                    "gasUsed": gasUsed,
+                    "transactionHash": transactionHash
+                ]
+
+                // Add optional capability-specific metadata if needed
+                // For now, we'll keep it simple
+
+                let result: [String: Any] = [
+                    "version": "2.0.0",
+                    "chainId": Constants.Networks.getCurrentChainIdHex(),
+                    "id": callBundleId,
+                    "status": status,
+                    "atomic": true, // Our EIP-7702 implementation is atomic
+                    "receipts": [receiptDict]
+                ]
+
+                return ["result": result]
+
+            case .failure(let error):
+                // Return pending status if transaction not found
+                return ["result": [
+                    "version": "2.0.0",
+                    "chainId": Constants.Networks.getCurrentChainIdHex(),
+                    "id": callBundleId,
+                    "status": 100, // Batch has been received but not completed onchain
+                    "atomic": true
+                ]]
+            }
+        } catch {
+            return ["error": "Failed to get calls status: \(error.localizedDescription)"]
+        }
+    }
+
     private func handleSignInWithEthereum(params: [String: Any], address: String, chainIds: [String], appMetadata: AppMetadata) throws -> [String: Any] {
         // Extract SIWE parameters with defaults from app metadata
         let nonce = params["nonce"] as? String ?? ""
@@ -577,22 +935,17 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         if let explicitChainId = params["chainId"] as? String {
             // Validate explicit chainId is supported
             guard isChainSupported(explicitChainId) else {
-                logger.error("SIWE: Explicitly provided chainId is not supported: \(explicitChainId)")
                 throw NSError(domain: "SIWE", code: 3, userInfo: [NSLocalizedDescriptionKey: "Explicitly provided chain ID is not supported: \(explicitChainId)"])
             }
             chainId = explicitChainId
-            logger.info("SIWE: Using explicitly provided chainId: \(chainId)")
         } else if let firstSupportedChainId = chainIds.first {
             chainId = firstSupportedChainId
-            logger.info("SIWE: Using first chainId from wallet_connect request: \(chainId), available chains: \(chainIds)")
         } else {
             chainId = "0x1" // Ethereum mainnet as fallback
-            logger.info("SIWE: No chainIds available, falling back to Ethereum mainnet: \(chainId)")
         }
 
         // Validate that the chosen chain ID is supported
         guard isChainSupported(chainId) else {
-            logger.error("SIWE: Unsupported chain ID selected: \(chainId)")
             throw NSError(domain: "SIWE", code: 2, userInfo: [NSLocalizedDescriptionKey: "Unsupported chain ID for SIWE: \(chainId)"])
         }
         // Use app metadata domain/URI as primary, fall back to params or defaults
@@ -606,8 +959,6 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         let resources = params["resources"] as? [String] ?? []
         let statement = params["statement"] as? String
         // Use app metadata scheme as primary, fall back to params
-        let scheme = params["scheme"] as? String ?? appMetadata.scheme ?? "https"
-
         // Generate SIWE message
         var message = "\(domain) wants you to sign in with your Ethereum account:\n\(address)\n\n"
 
@@ -933,13 +1284,424 @@ private func awaitPromise<T>(_ promise: Promise<T>) -> Swift.Result<T, Error> {
     _ = semaphore.wait(timeout: .now() + 30)
     return result
 }
+    private func signEIP7702Authorization(contractAddress: String, chainId: BigUInt, fromAddress: String, txNonce: BigUInt) throws -> SafariWebExtensionHandler.EIP7702Authorization {
+        // For self-sponsored EIP-7702, the sender's nonce is incremented BEFORE processing the authorization list.
+        // Therefore, the authorization tuple's nonce MUST equal (txNonce + 1).
+        let nonce = txNonce + 1
+
+        // Create authorization hash: keccak256('0x05' || rlp([chain_id, address, nonce]))
+        let addr = try EthereumAddress(hex: contractAddress, eip55: false)
+        let addressData = Data(addr.rawAddress) // 20-byte address, no padding per spec
+
+        // RLP encode [chain_id, address, nonce]
+        let encoder = RLPEncoder()
+        let rlpData = try encoder.encode(RLPItem.array([
+            RLPItem.bigUInt(chainId),              // chain_id
+            RLPItem.bytes([UInt8](addressData)),  // 20-byte address
+            RLPItem.bigUInt(nonce)                // nonce
+        ]))
+
+        // Add 0x05 prefix
+        var authData = Data([0x05])
+        authData.append(contentsOf: rlpData)
+
+        // Hash it
+        let authHash = authData.sha3(.keccak256)
+
+        // Sign the hash (EIP-2 low-s normalized by underlying signer)
+        let ethAddress = try Model.EthereumAddress(hex: fromAddress)
+        let account = EthereumAccount(address: ethAddress)
+        let signature = try account.signDigest([UInt8](authHash), accessGroup: Constants.accessGroup)
+        // Normalize v to y_parity (0/1) regardless of library returning 27/28 or 0/1
+        let authYParity: UInt8 = {
+            if signature.v == 27 || signature.v == 28 { return UInt8(signature.v - 27) }
+            if signature.v == 0 || signature.v == 1 { return UInt8(signature.v) }
+            return UInt8(signature.v & 1)
+        }()
+
+        // Create authorization object
+        return SafariWebExtensionHandler.EIP7702Authorization(
+            chainId: chainId,
+            address: contractAddress,
+            nonce: nonce,
+            r: Data(signature.r),
+            s: Data(signature.s),
+            v: authYParity
+        )
+    }
+
+    private func serializeEIP7702Transaction(
+        nonce: EthereumQuantity,
+        maxPriorityFeePerGas: EthereumQuantity,
+        maxFeePerGas: EthereumQuantity,
+        gasLimit: EthereumQuantity,
+        to: String?,
+        value: EthereumQuantity,
+        data: Data,
+        accessList: [(String, [Data])],
+        authorizations: [SafariWebExtensionHandler.EIP7702Authorization],
+        chainId: BigUInt,
+        fromAddress: String
+    ) throws -> Data {
+        let encoder = RLPEncoder()
+
+        // Encode authorization list (order: chain_id, address, nonce, y_parity, r, s)
+        var authListItems: [RLPItem] = []
+        for auth in authorizations {
+            let addrData = Data(hexString: auth.address.hasPrefix("0x") ? String(auth.address.dropFirst(2)) : auth.address) ?? Data()
+            let authItem = RLPItem.array([
+                RLPItem.bigUInt(auth.chainId),                    // chain_id
+                RLPItem.bytes([UInt8](addrData)),                // address (20 bytes)
+                RLPItem.bigUInt(auth.nonce),                      // nonce (uint64)
+                RLPItem.bigUInt(try BigUInt(auth.v)),                 // y_parity (uint8)
+                RLPItem.bigUInt(BigUInt([UInt8](auth.r))),        // r (bytes32 as integer)
+                RLPItem.bigUInt(BigUInt([UInt8](auth.s)))         // s (bytes32 as integer)
+            ])
+            authListItems.append(authItem)
+        }
+        let authorizationList = RLPItem.array(authListItems)
+
+        // Encode access list
+        var accessListItems: [RLPItem] = []
+        for (address, storageKeys) in accessList {
+            let addrData = Data(hexString: address.hasPrefix("0x") ? String(address.dropFirst(2)) : address) ?? Data()
+            let keysItems = storageKeys.map { RLPItem.bytes([UInt8]($0)) }
+            let entryItem = RLPItem.array([
+                RLPItem.bytes([UInt8](addrData)),
+                RLPItem.array(keysItems)
+            ])
+            accessListItems.append(entryItem)
+        }
+        let accessListRLP = RLPItem.array(accessListItems)
+
+        // Build the transaction payload WITHOUT signature for signing
+        let txPayloadArray: [RLPItem] = [
+            RLPItem.bigUInt(chainId),                           // chain_id
+            RLPItem.bigUInt(nonce.quantity),                    // nonce
+            RLPItem.bigUInt(maxPriorityFeePerGas.quantity),    // max_priority_fee_per_gas
+            RLPItem.bigUInt(maxFeePerGas.quantity),            // max_fee_per_gas
+            RLPItem.bigUInt(gasLimit.quantity),                // gas_limit
+            (to != nil ? RLPItem.bytes([UInt8](Data(hexString: to!.hasPrefix("0x") ? String(to!.dropFirst(2)) : to!) ?? Data())) : RLPItem.bytes([])), // to
+            RLPItem.bigUInt(value.quantity),                    // value
+            RLPItem.bytes([UInt8](data)),                      // data
+            accessListRLP,                                      // access_list
+            authorizationList                                   // authorization_list
+        ]
+
+        // Encode the transaction payload for signing
+        let encodedPayload = try encoder.encode(RLPItem.array(txPayloadArray))
+
+        // EIP-7702 signing: keccak256(SET_CODE_TX_TYPE || TransactionPayload)
+        var signingData = Data([0x04]) // SET_CODE_TX_TYPE
+        signingData.append(contentsOf: encodedPayload)
+        let digest = signingData.sha3(.keccak256)
+
+        // Sign the digest
+        let ethAddress = try Model.EthereumAddress(hex: fromAddress)
+        let account = EthereumAccount(address: ethAddress)
+        let signature = try account.signDigest([UInt8](digest), accessGroup: Constants.accessGroup)
+
+        // Normalize signature v to y_parity (0/1) for EIP-7702 outer tx
+        let yParity: BigUInt = {
+            if signature.v == 27 || signature.v == 28 { return BigUInt(signature.v - 27) }
+            if signature.v == 0 || signature.v == 1 { return BigUInt(signature.v) }
+            return BigUInt(signature.v & 1)
+        }()
+        let r = BigUInt(signature.r)
+        let s = BigUInt(signature.s)
+
+        // Build the final transaction array WITH signature
+        let txArrayWithSig: [RLPItem] = [
+            RLPItem.bigUInt(chainId),                           // chain_id
+            RLPItem.bigUInt(nonce.quantity),                    // nonce
+            RLPItem.bigUInt(maxPriorityFeePerGas.quantity),    // max_priority_fee_per_gas
+            RLPItem.bigUInt(maxFeePerGas.quantity),            // max_fee_per_gas
+            RLPItem.bigUInt(gasLimit.quantity),                // gas_limit
+            (to != nil ? RLPItem.bytes([UInt8](Data(hexString: to!.hasPrefix("0x") ? String(to!.dropFirst(2)) : to!) ?? Data())) : RLPItem.bytes([])), // to
+            RLPItem.bigUInt(value.quantity),                    // value
+            RLPItem.bytes([UInt8](data)),                      // data
+            accessListRLP,                                      // access_list
+            authorizationList,                                  // authorization_list
+            RLPItem.bigUInt(yParity),                            // signature_y_parity (uint8)
+            RLPItem.bigUInt(r),                                  // signature_r (bytes32 as integer)
+            RLPItem.bigUInt(s)                                   // signature_s (bytes32 as integer)
+        ]
+
+        // Encode the transaction with signature
+        let encodedTx = try encoder.encode(RLPItem.array(txArrayWithSig))
+
+        // Add transaction type prefix (0x04 for EIP-7702)
+        var finalTx = Data([0x04])
+        finalTx.append(contentsOf: encodedTx)
+
+        return finalTx
+    }
+
+    private func createExecuteBatchTransaction(calls: [[String: Any]], authorizations: [SafariWebExtensionHandler.EIP7702Authorization], fromAddress: String, chainIdBig: BigUInt, version: Int, currentBalance: BigUInt, txNonce: EthereumQuantity) throws -> [String: Any] {
+        let (rpcURL, currentChainId) = Constants.Networks.currentNetwork()
+        let web3 = Web3(rpcURL: rpcURL)
+
+        // Create fromAddr from the fromAddress parameter
+        let fromAddr = try EthereumAddress(hex: fromAddress, eip55: false)
+
+
+        // Manually ABI-encode executeBatch((address,uint256,bytes)[] calls)
+        // selector (0x34fcd5be) + head (0x20) + array region (length, offsets, tuples, bytes)
+        var data = Data()
+        data.append(contentsOf: Data(hexString: "0x34fcd5be")!)
+
+        // Head: single dynamic argument at offset 0x20
+        data.append(contentsOf: BigUInt(32).serialize().leftPadded(to: 32))
+
+        // Build array region
+        var arrayRegion = Data()
+        let callsLength = calls.count
+        arrayRegion.append(contentsOf: BigUInt(callsLength).serialize().leftPadded(to: 32))
+
+        // Precompute tuple encodings to compute offsets and accumulate total value
+        struct EncodedCall { let tupleHead: Data; let dynamicBytes: Data }
+        var encodedCalls: [EncodedCall] = []
+        encodedCalls.reserveCapacity(callsLength)
+
+        for call in calls {
+            let targetHex = call["target"] as! String
+            let valueHex = call["value"] as? String ?? "0x0"
+            let dataHex = call["data"] as? String ?? "0x"
+
+            let target = try EthereumAddress(hex: targetHex, eip55: false)
+            let value = BigUInt.fromHexQuantity(valueHex) ?? BigUInt.zero
+            let callBytes = Data(hexString: dataHex) ?? Data()
+
+            // dynamic bytes payload: length + data + padding
+            var dyn = Data()
+            dyn.append(contentsOf: BigUInt(callBytes.count).serialize().leftPadded(to: 32))
+            dyn.append(callBytes)
+            let rem = dyn.count % 32
+            if rem != 0 { dyn.append(Data(repeating: 0, count: 32 - rem)) }
+
+            // tuple head: address, value, bytes_offset (0x60)
+            var head = Data()
+            head.append(Data(target.rawAddress).leftPadded(to: 32))
+            head.append(value.serialize().leftPadded(to: 32))
+            head.append(BigUInt(0x60).serialize().leftPadded(to: 32))
+
+            encodedCalls.append(EncodedCall(tupleHead: head, dynamicBytes: dyn))
+        }
+
+        // Offsets to each tuple within array region (relative to start of array payload AFTER length)
+        let firstTupleOffset = BigUInt(32 * callsLength)
+        var running = firstTupleOffset
+        for enc in encodedCalls {
+            arrayRegion.append(contentsOf: running.serialize().leftPadded(to: 32))
+            let tupleSize = enc.tupleHead.count + enc.dynamicBytes.count
+            running += BigUInt(tupleSize)
+        }
+
+        // Append all tuples (head + dynamic bytes)
+        for enc in encodedCalls {
+            arrayRegion.append(enc.tupleHead)
+            arrayRegion.append(enc.dynamicBytes)
+        }
+
+        // Final calldata = selector + head + arrayRegion
+        data.append(arrayRegion)
+
+        let toAddr = fromAddr // EIP-7702: Send transaction to user's wallet, which gets temporarily delegated to Simple7702Account
+
+        // Use provided transaction nonce computed earlier to avoid race conditions
+        let nonce: EthereumQuantity = txNonce
+
+        // Get EIP-1559 fee data
+        let maxFeePerGas: EthereumQuantity
+        let maxPriorityFeePerGas: EthereumQuantity
+
+        // Get gas price (simplified - using legacy gas price for now)
+        switch awaitPromise(web3.eth.gasPrice()) {
+        case .success(let gp):
+            // Use EIP-1559 style fees if available; otherwise default to legacy gasPrice
+            maxFeePerGas = gp
+            maxPriorityFeePerGas = gp
+        case .failure(let err):
+            throw NSError(domain: "Transaction", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to get gas price"])
+        }
+
+        // Create transaction data
+        let txData = try EthereumData(data)
+        // Estimate gas (use default if estimation fails, for debugging)
+        var gasLimit: EthereumQuantity
+        let estimate = awaitPromise(web3.eth.estimateGas(call: EthereumCall(from: fromAddr, to: toAddr, gas: nil, gasPrice: nil, value: EthereumQuantity(quantity: BigUInt.zero), data: txData)))
+        switch estimate {
+        case .success(let est):
+            gasLimit = est
+        case .failure(let err):
+            throw NSError(domain: "Transaction", code: 4, userInfo: [NSLocalizedDescriptionKey: "Gas estimation failed: \(err.localizedDescription)"])
+        }
+
+        // Add intrinsic overhead for EIP-7702 (base tx cost + per-authorization cost)
+        if !authorizations.isEmpty {
+            let authOverhead = BigUInt(25_000 * authorizations.count)
+            let baseOverhead = BigUInt(21_000)
+            let safetyMargin = BigUInt(50_000)
+            let newLimit = gasLimit.quantity + authOverhead + baseOverhead + safetyMargin
+            gasLimit = EthereumQuantity(quantity: newLimit)
+        }
+
+        // Check if balance is sufficient for estimated transaction cost
+        let estimatedGasCost = gasLimit.quantity * maxFeePerGas.quantity
+
+        if currentBalance < estimatedGasCost {
+            let shortfall = estimatedGasCost - currentBalance
+            return ["error": "Insufficient balance on chainId \(chainIdBig). Required: \(formatWeiToEth(estimatedGasCost)), Available: \(formatWeiToEth(currentBalance)), Shortfall: \(formatWeiToEth(shortfall))"]
+        }
+
+        // Check if we need EIP-7702 transaction format
+        if !authorizations.isEmpty {
+            // Create and submit EIP-7702 transaction with authorization list
+            let rawTx = try serializeEIP7702Transaction(
+                nonce: nonce,
+                maxPriorityFeePerGas: maxPriorityFeePerGas,
+                maxFeePerGas: maxFeePerGas,
+                gasLimit: gasLimit,
+                to: toAddr.hex(eip55: true),
+                value: EthereumQuantity(quantity: BigUInt.zero),
+                data: Data(txData.bytes),
+                accessList: [],
+                authorizations: authorizations,
+                chainId: chainIdBig,
+                fromAddress: fromAddress
+            )
+
+            // Submit the EIP-7702 transaction
+            let rawTxHex = "0x" + rawTx.hex()
+            // Try to submit the EIP-7702 transaction
+            if let url = URL(string: rpcURL) {
+                switch awaitPromise(submitEIP7702Transaction(rpcURL: url, rawTxHex: rawTxHex)) {
+                case .success(let txHash):
+                    if version == 2 {
+                        return ["result": ["id": txHash]]
+                    } else {
+                        return ["result": txHash]
+                    }
+                case .failure(let eip7702Error):
+                    throw eip7702Error
+                }
+            } else {
+                throw NSError(domain: "EIP7702", code: 4, userInfo: [NSLocalizedDescriptionKey: "Invalid RPC URL"])
+            }
+        }
+
+        // Create legacy transaction (fallback or when no authorizations needed)
+        let tx = EthereumTransaction(
+            nonce: nonce,
+            gasPrice: maxFeePerGas,
+            gasLimit: gasLimit,
+            to: toAddr,
+            value: EthereumQuantity(quantity: BigUInt.zero),
+            data: txData
+        )
+
+        // Sign transaction
+        let msg = try computeTransactionMessageToSign(tx: tx, chainId: EthereumQuantity(quantity: chainIdBig))
+        let digest = Data(msg).sha3(.keccak256)
+        let account = EthereumAccount(address: try Model.EthereumAddress(hex: fromAddress))
+        let sig = try account.signDigest([UInt8](digest), accessGroup: Constants.accessGroup)
+
+        let recId: BigUInt = {
+            if sig.v == 27 || sig.v == 28 { return BigUInt(sig.v - 27) }
+            return BigUInt(sig.v)
+        }()
+
+        let vFinal: EthereumQuantity = {
+            if chainIdBig == 0 { return EthereumQuantity(quantity: recId + 27) }
+            return EthereumQuantity(quantity: recId + 35 + (chainIdBig * 2))
+        }()
+
+        let signedTx = EthereumSignedTransaction(
+            nonce: tx.nonce!,
+            gasPrice: tx.gasPrice!,
+            gasLimit: tx.gasLimit!,
+            to: tx.to,
+            value: tx.value ?? EthereumQuantity(quantity: 0),
+            data: tx.data,
+            v: vFinal,
+            r: EthereumQuantity(quantity: BigUInt(sig.r)),
+            s: EthereumQuantity(quantity: BigUInt(sig.s)),
+            chainId: EthereumQuantity(quantity: chainIdBig),
+            accessList: tx.accessList,
+            transactionType: .legacy
+        )
+
+
+        // Send transaction
+        switch awaitPromise(web3.eth.sendRawTransaction(transaction: signedTx)) {
+        case .success(let txHash):
+            if version == 2 {
+                return ["result": ["id": txHash.hex()]]
+            } else {
+                return ["result": txHash.hex()]
+            }
+        case .failure(let e):
+            throw NSError(domain: "Transaction", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to send transaction: \(e.localizedDescription)"])
+        }
+    }
+
+    private func submitEIP7702Transaction(rpcURL: URL, rawTxHex: String) -> Promise<String> {
+        return Promise<String> { seal in
+            var request = URLRequest(url: rpcURL)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+            let requestBody: [String: Any] = [
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "eth_sendRawTransaction",
+                "params": [rawTxHex]
+            ]
+
+            do {
+                request.httpBody = try JSONSerialization.data(withJSONObject: requestBody, options: [])
+
+                let task = URLSession.shared.dataTask(with: request) { data, response, error in
+                    if let error = error {
+                        seal.reject(error)
+                        return
+                    }
+
+                    guard let data = data else {
+                        seal.reject(NSError(domain: "EIP7702", code: 1, userInfo: [NSLocalizedDescriptionKey: "No data received"]))
+                        return
+                    }
+
+                    do {
+                        let responseString = String(data: data, encoding: .utf8) ?? "Unable to decode response"
+                        if let jsonResponse = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
+                           let result = jsonResponse["result"] as? String {
+                            seal.fulfill(result)
+                        } else if let errorResponse = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
+                                  let error = errorResponse["error"] as? [String: Any],
+                                  let message = error["message"] as? String {
+                            seal.reject(NSError(domain: "EIP7702", code: 2, userInfo: [NSLocalizedDescriptionKey: message]))
+                        } else {
+                            seal.reject(NSError(domain: "EIP7702", code: 3, userInfo: [NSLocalizedDescriptionKey: "Invalid RPC response"]))
+                        }
+                    } catch {
+                        seal.reject(error)
+                    }
+                }
+                task.resume()
+            } catch {
+                seal.reject(error)
+            }
+        }
+    }
+
 private func toCanonicalSignature(_ signature: (v: UInt, r: [UInt8], s: [UInt8])) -> Data {
     // Ensure r, s are 32-byte each
     let rData = Data(signature.r)
     let sData = Data(signature.s)
     let r32 = rData.count == 32 ? rData : Data(count: 32 - rData.count) + rData
     let s32 = sData.count == 32 ? sData : Data(count: 32 - sData.count) + sData
-    
+
     // Normalize v to 27/28 (Ethereum canonical)
     let vCanonical: UInt8
     if signature.v == 0 || signature.v == 27 {
@@ -947,17 +1709,23 @@ private func toCanonicalSignature(_ signature: (v: UInt, r: [UInt8], s: [UInt8])
     } else if signature.v == 1 || signature.v == 28 {
         vCanonical = 28
     } else {
-        #if DEBUG
-        print("⚠️ Unexpected v value \(signature.v); using lower-byte \(signature.v & 0xFF)")
-        #endif
         vCanonical = UInt8(signature.v & 0xFF)
     }
-    
+
     var data = Data()
     data.append(r32)
     data.append(s32)
     data.append(vCanonical)
     return data
+}
+
+private func formatWeiToEth(_ wei: BigUInt) -> String {
+    let divisor = BigUInt(1_000_000_000_000_000_000)
+    let integer = wei / divisor
+    let remainder = wei % divisor
+    let remainderStr = String(remainder).leftPadded(to: 18)
+    let decimals = String(remainderStr.prefix(6))
+    return "\(integer).\(decimals) ETH"
 }
 
 private extension Data {
@@ -973,5 +1741,16 @@ private extension Data {
             index = next
         }
         self = data
+    }
+
+    func hex() -> String {
+        return self.map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+private extension String {
+    func leftPadded(to length: Int, with pad: Character = "0") -> String {
+        if count >= length { return self }
+        return String(repeating: String(pad), count: length - count) + self
     }
 }

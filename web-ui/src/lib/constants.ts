@@ -4,6 +4,7 @@ export const UI_METHODS = [
   "personal_sign",
   "eth_signTypedData_v4",
   "eth_sendTransaction",
+  "wallet_sendCalls",
 ] as const;
 
 export const FAST_METHODS = [

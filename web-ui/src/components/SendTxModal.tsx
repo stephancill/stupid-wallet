@@ -1,13 +1,12 @@
 import Address from "@/components/Address";
+import { CallDecoder } from "@/components/CallDecoder";
 import { Skeleton } from "@/components/ui/skeleton";
-import { whatsabi } from "@shazow/whatsabi";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   createPublicClient,
-  decodeFunctionData,
   formatEther,
   hexToBigInt,
   hexToNumber,
@@ -17,6 +16,49 @@ import {
 import * as chains from "viem/chains";
 import { RequestModal } from "@/components/RequestModal";
 import { cn } from "@/lib/utils";
+
+// Transaction types
+interface BaseTransaction {
+  to?: string;
+  from?: string;
+  value?: string;
+  data?: string;
+  input?: string;
+  gas?: string;
+  gasPrice?: string;
+  maxFeePerGas?: string;
+  maxPriorityFeePerGas?: string;
+  nonce?: string;
+}
+
+interface SingleTransaction extends BaseTransaction {}
+
+interface BatchCall extends BaseTransaction {
+  id?: number;
+}
+
+interface WalletSendCallsParams {
+  calls: BatchCall[];
+  from?: string;
+  [key: string]: any;
+}
+
+type TransactionParams =
+  | [SingleTransaction] // eth_sendTransaction
+  | [WalletSendCallsParams]; // wallet_sendCalls
+
+// Type guard functions
+function isWalletSendCalls(
+  params: TransactionParams
+): params is [WalletSendCallsParams] {
+  return params.length > 0 && "calls" in params[0];
+}
+
+function isSingleTransaction(
+  params: TransactionParams
+): params is [SingleTransaction] {
+  return params.length > 0 && !("calls" in params[0]);
+}
 
 function stringifyWithBigInt(value: unknown) {
   return JSON.stringify(
@@ -28,30 +70,75 @@ function stringifyWithBigInt(value: unknown) {
 
 type SendTxModalProps = {
   host: string;
-  tx: Record<string, any>;
+  method: "eth_sendTransaction" | "wallet_sendCalls";
+  params: TransactionParams;
   onApprove: () => void;
   onReject: () => void;
 };
 
 export function SendTxModal({
   host,
-  tx,
+  method,
+  params,
   onApprove,
   onReject,
 }: SendTxModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showCopied, setShowCopied] = useState(false);
-  const to = useMemo(() => tx.to || "(contract creation)", [tx]);
-  const from = useMemo(() => tx.from || "", [tx]);
-  const rawValue = useMemo(() => tx.value ?? "0x0", [tx]);
-  const valueEth = useMemo(() => {
-    return isHex(rawValue) ? formatEther(hexToBigInt(rawValue)) : "0";
-  }, [rawValue]);
-  const [showMoreDecoded, setShowMoreDecoded] = useState(false);
+
+  // Detect if this is a batch call or single transaction using type guards
+  const isBatchCall = method === "wallet_sendCalls";
+
+  // Extract transaction data with proper typing
+  const calls = useMemo(() => {
+    if (isWalletSendCalls(params)) {
+      // wallet_sendCalls: params[0] contains {calls: [...]}
+      const batchParams = params[0];
+      if (batchParams.calls && Array.isArray(batchParams.calls)) {
+        return batchParams.calls.map(
+          (call: BatchCall, index: number): BatchCall => ({
+            ...call,
+            id: index,
+            from: batchParams.from || "",
+          })
+        );
+      }
+      return [] as BatchCall[];
+    } else if (isSingleTransaction(params)) {
+      // eth_sendTransaction: params[0] is the transaction object
+      const singleTx = params[0];
+      return [singleTx || ({} as SingleTransaction)] as SingleTransaction[];
+    }
+    return [] as BaseTransaction[];
+  }, [isBatchCall, params]);
+
+  // Calculate total value for batch calls
+  const totalValue = useMemo(() => {
+    return calls.reduce((sum: bigint, tx: BaseTransaction) => {
+      const value = tx.value ?? "0x0";
+      return sum + (isHex(value) ? hexToBigInt(value) : 0n);
+    }, 0n);
+  }, [calls]);
+
+  const totalValueEth = useMemo(() => {
+    return formatEther(totalValue);
+  }, [totalValue]);
+
+  // Primary transaction for single transaction operations
+  const primaryTransaction = useMemo(
+    () => calls[0] || ({} as BaseTransaction),
+    [calls]
+  );
+
+  // Extract from address
+  const from = useMemo(
+    () => primaryTransaction.from || "",
+    [primaryTransaction]
+  );
 
   useEffect(() => {
-    console.log("tx", tx);
-  }, [tx]);
+    console.log("method:", method, "params:", params);
+  }, [method, params]);
 
   const {
     data: chainId,
@@ -78,191 +165,20 @@ export function SendTxModal({
     ) as chains.Chain;
   }, [chainId]);
 
-  const {
-    data: abiLoadResult,
-    isLoading: isAbiLoadLoading,
-    isError: isAbiLoadError,
-  } = useQuery({
-    queryKey: ["contractAbi", to?.toLowerCase?.() || to, chain?.id],
-    queryFn: async () => {
-      try {
-        const client = createPublicClient({
-          chain: chain,
-          transport: http(),
-        });
-
-        const etherscanBaseUrl = Object.values(
-          chain?.blockExplorers || {}
-        ).find((item) => item.name.includes("scan"))?.apiUrl;
-
-        if (!etherscanBaseUrl) {
-          throw new Error("Block explorer base URL not found");
-        }
-
-        const result = await whatsabi.autoload(to, {
-          provider: client,
-          ...whatsabi.loaders.defaultsWithEnv({
-            SOURCIFY_CHAIN_ID: chain?.id.toString(),
-            ETHERSCAN_API_KEY: process.env.ETHERSCAN_API_KEY,
-            ETHERSCAN_BASE_URL: etherscanBaseUrl,
-          }),
-        });
-
-        return result;
-      } catch (_) {
-        return null;
-      }
-    },
-    enabled: Boolean(chain && to),
-  });
+  const to = useMemo(
+    () => primaryTransaction.to || "(contract creation)",
+    [primaryTransaction]
+  );
 
   const dataHex: string = useMemo(() => {
     return (
-      (typeof tx.data === "string" && tx.data) ||
-      (typeof tx.input === "string" && tx.input) ||
+      (typeof primaryTransaction.data === "string" &&
+        primaryTransaction.data) ||
+      (typeof primaryTransaction.input === "string" &&
+        primaryTransaction.input) ||
       "0x"
     );
-  }, [tx]);
-
-  const decoded = useMemo(() => {
-    if (!dataHex || dataHex === "0x") return null;
-    if (!abiLoadResult) return null;
-    return decodeFunctionData({
-      abi: abiLoadResult.abi,
-      data: dataHex as `0x${string}`,
-    });
-  }, [abiLoadResult, dataHex]);
-
-  const functionItem = useMemo(() => {
-    try {
-      if (!decoded || !abiLoadResult?.abi) return null;
-      const abi = (abiLoadResult.abi || []) as Array<any>;
-      const candidates = abi.filter(
-        (item) =>
-          item?.type === "function" && item?.name === decoded.functionName
-      );
-      if (candidates.length === 0) return null;
-      const exact = candidates.find(
-        (item) => (item?.inputs?.length || 0) === (decoded.args?.length || 0)
-      );
-      return exact || candidates[0];
-    } catch {
-      return null;
-    }
-  }, [decoded, abiLoadResult]);
-
-  const addressArgItems = useMemo(() => {
-    try {
-      if (!functionItem?.inputs || !decoded?.args)
-        return [] as Array<{ key: string; address: string }>;
-      const items: Array<{ key: string; address: string }> = [];
-      functionItem.inputs.forEach((inp: any, i: number) => {
-        const type = inp?.type as string | undefined;
-        const argVal = (decoded as any)?.args?.[i];
-        if (!type) return;
-        if (type === "address") {
-          if (typeof argVal === "string" && argVal.startsWith("0x")) {
-            items.push({ key: `${i}`, address: argVal.toLowerCase() });
-          }
-        } else if (type === "address[]" && Array.isArray(argVal)) {
-          argVal.forEach((addr: any, j: number) => {
-            if (typeof addr === "string" && addr.startsWith("0x")) {
-              items.push({ key: `${i}.${j}`, address: addr.toLowerCase() });
-            }
-          });
-        }
-      });
-      return items;
-    } catch {
-      return [] as Array<{ key: string; address: string }>;
-    }
-  }, [functionItem, decoded]);
-
-  const uniqueArgAddresses = useMemo(() => {
-    return Array.from(new Set(addressArgItems.map((i) => i.address)));
-  }, [addressArgItems]);
-
-  const { data: argEnsMap } = useQuery({
-    queryKey: ["ensArgNames", uniqueArgAddresses],
-    queryFn: async () => {
-      try {
-        const mainnetClient = createPublicClient({
-          chain: chains.mainnet,
-          transport: http(),
-        });
-        const entries = await Promise.all(
-          uniqueArgAddresses.map(async (addr) => {
-            try {
-              const name = await mainnetClient.getEnsName({
-                address: addr as `0x${string}`,
-              });
-              return [addr, name] as const;
-            } catch {
-              return [addr, null] as const;
-            }
-          })
-        );
-        const map: Record<string, string | null> = {};
-        for (const [addr, name] of entries) map[addr] = name;
-        return map;
-      } catch {
-        return {} as Record<string, string | null>;
-      }
-    },
-    enabled: uniqueArgAddresses.length > 0,
-  });
-
-  const renderAddressLink = (
-    address: string,
-    className?: string,
-    ens?: string | null
-  ) => {
-    return <Address address={address} className={className} mono />;
-  };
-
-  const renderArgValue = (value: any, type?: string) => {
-    if (
-      type === "address" &&
-      typeof value === "string" &&
-      value.startsWith("0x")
-    ) {
-      const name = argEnsMap?.[value.toLowerCase()] || null;
-      return renderAddressLink(value, "font-mono break-all", name);
-    }
-    if (type === "address[]" && Array.isArray(value)) {
-      return (
-        <div className="space-y-1">
-          {value.map((addr: any, j: number) => {
-            if (typeof addr === "string" && addr.startsWith("0x")) {
-              const name = argEnsMap?.[addr.toLowerCase()] || null;
-              return (
-                <div key={j}>
-                  {renderAddressLink(addr, "font-mono break-all", name)}
-                </div>
-              );
-            }
-            return <span key={j}>{String(addr)}</span>;
-          })}
-        </div>
-      );
-    }
-    if (typeof value === "bigint") return value.toString();
-    if (typeof value === "string") {
-      return value.startsWith("0x") ? (
-        <span className="font-mono break-all">{value}</span>
-      ) : (
-        <span>{value}</span>
-      );
-    }
-    if (Array.isArray(value) || (value && typeof value === "object")) {
-      return (
-        <pre className="whitespace-pre-wrap break-words">
-          {stringifyWithBigInt(value)}
-        </pre>
-      );
-    }
-    return <span>{String(value)}</span>;
-  };
+  }, [primaryTransaction]);
 
   const { data: names, isLoading: isNamesLoading } = useQuery({
     queryKey: [
@@ -300,8 +216,7 @@ export function SendTxModal({
     },
   });
 
-  const isAggregateLoading =
-    isChainIdLoading || isAbiLoadLoading || isNamesLoading;
+  const isAggregateLoading = isChainIdLoading || isNamesLoading;
   const controlsDisabled = isSubmitting || isAggregateLoading;
 
   const handleApprove = async () => {
@@ -325,13 +240,18 @@ export function SendTxModal({
 
   return (
     <RequestModal
-      primaryButtonTitle="Send"
+      primaryButtonTitle={isBatchCall ? "Send Batch" : "Send"}
       onPrimary={handleApprove}
       onReject={onReject}
       isSubmitting={isSubmitting}
-      address={from}
+      address={
+        isBatchCall && isWalletSendCalls(params)
+          ? params[0].from || ""
+          : primaryTransaction.from || ""
+      }
       footerChildren={
-        dataHex !== "0x" && (
+        dataHex !== "0x" &&
+        !isBatchCall && (
           <div className="flex w-full justify-center">
             <Button
               variant="ghost"
@@ -354,21 +274,12 @@ export function SendTxModal({
             <div className="text-sm break-all">
               <div className="font-medium text-foreground">{host}</div>
             </div>
-            <div className="text-sm text-muted-foreground">To</div>
-            <div className="text-sm break-all">
-              <div>
-                {typeof to === "string" && to.startsWith("0x") ? (
-                  <Address address={to} />
-                ) : (
-                  to
-                )}{" "}
-                {abiLoadResult?.contractResult?.name
-                  ? `(${abiLoadResult.contractResult.name})`
-                  : null}
-              </div>
-            </div>
-            <div className="text-sm text-muted-foreground">Value</div>
-            <div className="text-sm">{valueEth} ETH</div>
+            {isBatchCall ? (
+              <>
+                <div className="text-sm text-muted-foreground">Total Value</div>
+                <div className="text-sm">{totalValueEth} ETH</div>
+              </>
+            ) : null}
             <div className="text-sm text-muted-foreground">Chain</div>
             <div className="text-sm break-all">
               <div className="text-foreground" title={chainId?.toString()}>
@@ -377,82 +288,50 @@ export function SendTxModal({
             </div>
           </div>
 
-          <div>
-            {isAbiLoadLoading ? (
-              <div className="space-y-3">
-                <Skeleton className="h-3 w-full" />
-                <Skeleton className="h-16 w-full" />
+          {/* Show batch call details */}
+          {isBatchCall && calls.length > 0 && (
+            <div className="space-y-3">
+              <div className="text-sm font-medium text-foreground">
+                Transaction Details ({calls.length} calls)
               </div>
-            ) : decoded ? (
-              <>
-                <div className="space-y-2">
-                  <div className="text-sm">
-                    <span className="font-medium text-foreground">
-                      {decoded.functionName}
-                    </span>
-                    <span className="text-muted-foreground">
-                      {"("}
-                      {(functionItem?.inputs || [])
-                        .map((inp: any, i: number) =>
-                          [inp?.type || "unknown", inp?.name || `arg${i}`].join(
-                            " "
-                          )
-                        )
-                        .join(", ")}
-                      {")"}
-                    </span>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  {(functionItem?.inputs?.length || 0) > 0 ? (
-                    <div className="divide-y divide-border rounded-md border">
-                      {(decoded.args || []).map((arg: any, i: number) => {
-                        const input = (functionItem?.inputs as any)?.[i] || {};
-                        const label = input?.name || `arg${i}`;
-                        const type = input?.type || "unknown";
-                        return (
-                          <div key={i} className="py-2">
-                            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                              {label}
-                              <span className="ml-1 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
-                                {type}
-                              </span>
-                            </div>
-                            <div className="mt-1 text-xs text-foreground break-words">
-                              {renderArgValue(arg, type)}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <pre className="whitespace-pre font-mono text-muted-foreground text-[10px]">
-                      {stringifyWithBigInt(decoded)}
-                    </pre>
-                  )}
-                </div>
-              </>
-            ) : (
-              <div>
-                <pre
-                  className={cn(
-                    "whitespace-pre-wrap font-mono text-muted-foreground break-words",
-                    !showMoreDecoded && "line-clamp-2"
-                  )}
-                >
-                  {dataHex}
-                </pre>
-                <div>
-                  <button
-                    className="hover:underline text-blue-500"
-                    onClick={() => setShowMoreDecoded(!showMoreDecoded)}
+              <div className="space-y-5">
+                {calls.map((tx: BaseTransaction, index: number) => (
+                  <div
+                    key={(tx as BatchCall).id ?? index}
+                    className="space-y-3"
                   >
-                    {showMoreDecoded ? "Show less" : "Show more"}
-                  </button>
-                </div>
+                    <div className="text-sm font-medium text-foreground">
+                      Call #{index + 1}
+                    </div>
+                    <CallDecoder
+                      call={{
+                        to: tx.to,
+                        data: tx.data || tx.input,
+                        value: tx.value,
+                      }}
+                      chain={chain}
+                    />
+                  </div>
+                ))}
               </div>
-            )}
-          </div>
+            </div>
+          )}
+
+          {!isBatchCall && (
+            <div>
+              <div className="text-sm font-medium text-foreground mb-2">
+                Transaction Details
+              </div>
+              <CallDecoder
+                call={{
+                  to: primaryTransaction.to,
+                  data: primaryTransaction.data || primaryTransaction.input,
+                  value: primaryTransaction.value,
+                }}
+                chain={chain}
+              />
+            </div>
+          )}
         </div>
       </div>
     </RequestModal>

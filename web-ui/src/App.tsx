@@ -13,7 +13,7 @@ type ApprovalResult =
 
 type ModalState = {
   method: (typeof UI_METHODS)[number];
-  params: any[];
+  params: any[]; // Keep as any[] for flexibility, will be cast in components
   requestId: string;
   resolve: (r: ApprovalResult) => void;
 };
@@ -151,6 +151,10 @@ export function App({ container }: { container: HTMLDivElement }) {
           (p): p is string => typeof p === "string"
         );
       }
+      case "wallet_sendCalls": {
+        // wallet_sendCalls params are already in the correct format
+        return modal.params ?? [];
+      }
       default:
         return modal.params ?? [];
     }
@@ -233,11 +237,15 @@ export function App({ container }: { container: HTMLDivElement }) {
       />
     );
   }
-  if (modal.method === "eth_sendTransaction") {
+  if (
+    modal.method === "eth_sendTransaction" ||
+    modal.method === "wallet_sendCalls"
+  ) {
     return (
       <SendTxModal
         host={location.host}
-        tx={modal.params[0] || {}}
+        method={modal.method}
+        params={modal.params as any} // Type will be properly handled in SendTxModal
         onApprove={onApprove}
         onReject={onReject}
       />
