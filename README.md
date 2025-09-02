@@ -17,6 +17,8 @@ An iOS/macOS SwiftUI wallet app bundled with a Safari Web Extension that injects
   - `wallet_connect`
     - `signInWithEthereum` capability
   - `wallet_disconnect`
+  - `wallet_sendCalls`
+  - `wallet_getCallsStatus`
 - **EIP‑6963 discovery**: Announces provider and re‑announces on request
 - **Secure key management**: Encrypts the private key using a [fork of Dawn Key Management](https://github.com/stephancill/dawn-key-management)
 - **Balances**: Displays ETH balances on Ethereum, Base, Arbitrum One, and Optimism
