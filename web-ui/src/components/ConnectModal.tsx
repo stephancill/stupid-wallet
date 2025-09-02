@@ -19,12 +19,12 @@ export function ConnectModal({
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   const { data: accounts, isLoading: isAccountsLoading } = useQuery({
-    queryKey: ["accounts"],
+    queryKey: ["walletAddress"],
     queryFn: async () => {
       const { result }: { result: string[] } =
         await browser.runtime.sendMessage({
           type: "WALLET_REQUEST",
-          method: "eth_accounts",
+          method: "stupid_getWalletAddress",
           params: [],
         });
       return result || [];

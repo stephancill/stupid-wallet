@@ -6,6 +6,9 @@ const NATIVE_APP_ID = "co.za.stephancill.stupid-wallet"; // Bundle ID of contain
 // Store site metadata for pending requests so it can be accessed during confirmation
 const pendingRequests = new Map();
 
+// Store connection state per domain
+const connectedDomains = new Set();
+
 // Clean up old pending requests to prevent memory leaks
 function cleanupOldRequests() {
   const now = Date.now();
@@ -21,6 +24,49 @@ function cleanupOldRequests() {
 
 // Run cleanup every 2 minutes
 setInterval(cleanupOldRequests, 2 * 60 * 1000);
+
+// Load connection state from storage
+async function loadConnectionState() {
+  try {
+    const result = await browser.storage.local.get(["connectedDomains"]);
+    if (result.connectedDomains) {
+      result.connectedDomains.forEach((domain) => connectedDomains.add(domain));
+      console.log("Loaded connected domains:", Array.from(connectedDomains));
+    }
+  } catch (error) {
+    console.warn("Failed to load connection state:", error);
+  }
+}
+
+// Save connection state to storage
+async function saveConnectionState() {
+  try {
+    await browser.storage.local.set({
+      connectedDomains: Array.from(connectedDomains),
+    });
+  } catch (error) {
+    console.warn("Failed to save connection state:", error);
+  }
+}
+
+// Check if domain is connected
+function isDomainConnected(domain) {
+  return connectedDomains.has(domain);
+}
+
+// Mark domain as connected
+function connectDomain(domain) {
+  connectedDomains.add(domain);
+  saveConnectionState();
+  console.log(`Domain ${domain} connected`);
+}
+
+// Disconnect domain
+function disconnectDomain(domain) {
+  connectedDomains.delete(domain);
+  saveConnectionState();
+  console.log(`Domain ${domain} disconnected`);
+}
 
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log("Background received message:", message);
@@ -91,14 +137,55 @@ async function handleWalletRequest(message, sender, sendResponse) {
   try {
     switch (method) {
       // Fast methods - confirmation not required
-      case "eth_accounts":
+      case "eth_accounts": {
+        // Only return accounts if domain is connected
+        if (!isDomainConnected(siteMetadata.domain)) {
+          return sendResponse({ result: [] });
+        }
+        const native = await callNative({
+          method,
+          params,
+          siteMetadata,
+        });
+        if (native && native.result)
+          return sendResponse({ result: native.result });
+        if (native && native.error)
+          return sendResponse({ error: native.error });
+        return sendResponse({ error: "Request failed" });
+      }
+      case "stupid_getWalletAddress": {
+        // Special method for connection previews - bypasses connection state check
+        const native = await callNative({
+          method: "eth_accounts", // Use eth_accounts internally to get the address
+          params,
+          siteMetadata,
+        });
+        if (native && native.result)
+          return sendResponse({ result: native.result });
+        if (native && native.error)
+          return sendResponse({ error: native.error });
+        return sendResponse({ error: "Request failed" });
+      }
       case "eth_chainId":
       case "eth_blockNumber":
       case "wallet_addEthereumChain":
       case "wallet_getCapabilities":
       case "wallet_getCallsStatus":
-      case "wallet_switchEthereumChain":
+      case "wallet_switchEthereumChain": {
+        const native = await callNative({
+          method,
+          params,
+          siteMetadata,
+        });
+        if (native && native.result)
+          return sendResponse({ result: native.result });
+        if (native && native.error)
+          return sendResponse({ error: native.error });
+        return sendResponse({ error: "Request failed" });
+      }
       case "wallet_disconnect": {
+        // Disconnect the domain
+        disconnectDomain(siteMetadata.domain);
         const native = await callNative({
           method,
           params,
@@ -156,6 +243,14 @@ async function handleWalletConfirm(message, sendResponse) {
       siteMetadata,
     });
     if (native && native.result) {
+      // Mark domain as connected for connection methods
+      if (
+        (method === "eth_requestAccounts" || method === "wallet_connect") &&
+        siteMetadata.domain
+      ) {
+        connectDomain(siteMetadata.domain);
+      }
+
       // Clean up stored metadata after successful confirmation
       if (requestId) {
         pendingRequests.delete(requestId);
@@ -185,12 +280,14 @@ async function handleWalletConfirm(message, sendResponse) {
 }
 
 // Handle extension installation/startup
-browser.runtime.onInstalled.addListener(() => {
+browser.runtime.onInstalled.addListener(async () => {
   console.log("stupid wallet Safari Extension installed");
+  await loadConnectionState();
 });
 
-browser.runtime.onStartup.addListener(() => {
+browser.runtime.onStartup.addListener(async () => {
   console.log("stupid wallet Safari Extension started");
+  await loadConnectionState();
 });
 
 async function callNative(payload) {
