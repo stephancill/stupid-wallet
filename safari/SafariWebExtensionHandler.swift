@@ -893,7 +893,7 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
                 // For now, we'll keep it simple
 
                 let result: [String: Any] = [
-                    "version": "1.0",
+                    "version": "2.0.0",
                     "chainId": Constants.Networks.getCurrentChainIdHex(),
                     "id": callBundleId,
                     "status": status,
