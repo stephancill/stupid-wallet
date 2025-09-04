@@ -431,6 +431,13 @@ struct ContentView: View {
 
                 VStack(spacing: 12) {
                     HStack {
+                        NavigationLink(destination: AuthorizationsListView(address: vm.addressHex)) {
+                            Text("Authorizations")
+                        }
+                        Spacer()
+                    }
+
+                    HStack {
                         Button(action: { vm.revealPrivateKey() }) {
                             if vm.isRevealingPrivateKey {
                                 ProgressView()

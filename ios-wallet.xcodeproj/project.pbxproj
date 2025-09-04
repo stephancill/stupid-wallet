@@ -19,6 +19,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		D452C0D62E69096F0035444E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D4F389562E51FA740019E0C0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D4F3895D2E51FA740019E0C0;
+			remoteInfo = "stupid wallet";
+		};
 		D4F389862E51FA9D0019E0C0 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = D4F389562E51FA740019E0C0 /* Project object */;
@@ -43,6 +50,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		D452C0D22E69096F0035444E /* ios-walletTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "ios-walletTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		D4F3895E2E51FA740019E0C0 /* stupid wallet.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "stupid wallet.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		D4F389702E51FA9D0019E0C0 /* safari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = safari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -61,6 +69,11 @@
 		D421554A2E55E63E00EF2E37 /* shared */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = shared;
+			sourceTree = "<group>";
+		};
+		D452C0D32E69096F0035444E /* ios-walletTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "ios-walletTests";
 			sourceTree = "<group>";
 		};
 		D4F389602E51FA740019E0C0 /* ios-wallet */ = {
@@ -84,6 +97,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		D452C0CF2E69096F0035444E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		D4F3895B2E51FA740019E0C0 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -122,6 +142,7 @@
 				D421554A2E55E63E00EF2E37 /* shared */,
 				D4F389602E51FA740019E0C0 /* ios-wallet */,
 				D4F389712E51FA9D0019E0C0 /* safari */,
+				D452C0D32E69096F0035444E /* ios-walletTests */,
 				D421553B2E5498C200EF2E37 /* Frameworks */,
 				D4F3895F2E51FA740019E0C0 /* Products */,
 			);
@@ -132,6 +153,7 @@
 			children = (
 				D4F3895E2E51FA740019E0C0 /* stupid wallet.app */,
 				D4F389702E51FA9D0019E0C0 /* safari.appex */,
+				D452C0D22E69096F0035444E /* ios-walletTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -139,6 +161,29 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		D452C0D12E69096F0035444E /* ios-walletTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D452C0D82E69096F0035444E /* Build configuration list for PBXNativeTarget "ios-walletTests" */;
+			buildPhases = (
+				D452C0CE2E69096F0035444E /* Sources */,
+				D452C0CF2E69096F0035444E /* Frameworks */,
+				D452C0D02E69096F0035444E /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D452C0D72E69096F0035444E /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				D452C0D32E69096F0035444E /* ios-walletTests */,
+			);
+			name = "ios-walletTests";
+			packageProductDependencies = (
+			);
+			productName = "ios-walletTests";
+			productReference = D452C0D22E69096F0035444E /* ios-walletTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		D4F3895D2E51FA740019E0C0 /* stupid wallet */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = D4F389692E51FA760019E0C0 /* Build configuration list for PBXNativeTarget "stupid wallet" */;
@@ -206,6 +251,10 @@
 				LastSwiftUpdateCheck = 1640;
 				LastUpgradeCheck = 1640;
 				TargetAttributes = {
+					D452C0D12E69096F0035444E = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = D4F3895D2E51FA740019E0C0;
+					};
 					D4F3895D2E51FA740019E0C0 = {
 						CreatedOnToolsVersion = 16.4;
 					};
@@ -234,11 +283,19 @@
 			targets = (
 				D4F3895D2E51FA740019E0C0 /* stupid wallet */,
 				D4F3896F2E51FA9D0019E0C0 /* safari */,
+				D452C0D12E69096F0035444E /* ios-walletTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		D452C0D02E69096F0035444E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		D4F3895C2E51FA740019E0C0 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -277,6 +334,13 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		D452C0CE2E69096F0035444E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		D4F3895A2E51FA740019E0C0 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -294,6 +358,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		D452C0D72E69096F0035444E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D4F3895D2E51FA740019E0C0 /* stupid wallet */;
+			targetProxy = D452C0D62E69096F0035444E /* PBXContainerItemProxy */;
+		};
 		D4F389872E51FA9D0019E0C0 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = D4F3896F2E51FA9D0019E0C0 /* safari */;
@@ -302,6 +371,42 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		D452C0D92E69096F0035444E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 6JKMV57Y77;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "co.za.stephancill.ios-walletTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/stupid wallet.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/stupid wallet";
+			};
+			name = Debug;
+		};
+		D452C0DA2E69096F0035444E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 6JKMV57Y77;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "co.za.stephancill.ios-walletTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/stupid wallet.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/stupid wallet";
+			};
+			name = Release;
+		};
 		D4F389672E51FA760019E0C0 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -568,6 +673,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		D452C0D82E69096F0035444E /* Build configuration list for PBXNativeTarget "ios-walletTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D452C0D92E69096F0035444E /* Debug */,
+				D452C0DA2E69096F0035444E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		D4F389592E51FA740019E0C0 /* Build configuration list for PBXProject "ios-wallet" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
