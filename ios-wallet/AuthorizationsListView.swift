@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 import BigInt
 import Web3
 import Web3PromiseKit
@@ -18,6 +19,11 @@ struct AuthorizationsListView: View {
     @State private var errorMessage: String?
     @State private var resettingChainId: BigUInt?
     @State private var upgradingChainId: BigUInt?
+    @State private var showingResetConfirmation = false
+    @State private var chainToReset: AuthorizationsUtil.AuthorizationStatus?
+    @State private var showingUpgradeConfirmation = false
+    @State private var chainToUpgrade: AuthorizationsUtil.AuthorizationStatus?
+    @State private var showingInfo = false
 
     private var upgradedChains: [AuthorizationsUtil.AuthorizationStatus] {
         authorizationStatuses.filter { $0.hasAuthorization }
@@ -28,12 +34,20 @@ struct AuthorizationsListView: View {
     }
 
     var body: some View {
-        List {
+        Form {
             if isLoading {
-                HStack {
-                    Spacer()
-                    ProgressView("Checking authorizations...")
-                    Spacer()
+                Section {
+                    HStack {
+                        Spacer()
+                        VStack(spacing: 12) {
+                            ProgressView()
+                                .scaleEffect(1.2)
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, 20)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
                 }
             } else if let error = errorMessage {
                 HStack {
@@ -46,7 +60,7 @@ struct AuthorizationsListView: View {
             } else {
                 // Upgraded section
                 if !upgradedChains.isEmpty {
-                    Section(header: Text("Upgraded").font(.headline)) {
+                    Section("Upgraded") {
                         ForEach(upgradedChains, id: \.chainId) { status in
                             chainRow(for: status, isUpgraded: true)
                         }
@@ -55,7 +69,7 @@ struct AuthorizationsListView: View {
 
                 // Not upgraded section
                 if !notUpgradedChains.isEmpty {
-                    Section(header: Text("Not upgraded yet").font(.headline)) {
+                    Section("Not upgraded yet") {
                         ForEach(notUpgradedChains, id: \.chainId) { status in
                             chainRow(for: status, isUpgraded: false)
                         }
@@ -63,13 +77,155 @@ struct AuthorizationsListView: View {
                 }
             }
         }
-        .navigationTitle("EIP-7702 Authorizations")
+        .navigationTitle("Account Authorizations")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: {
+                    showingInfo = true
+                }) {
+                    Image(systemName: "info.circle")
+                }
+            }
+        }
+        .confirmationDialog(
+            "Reset Account Authorization",
+            isPresented: $showingResetConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Reset", role: .destructive) {
+                if let chain = chainToReset {
+                    Task {
+                        await resetAuthorization(for: chain.chainId)
+                    }
+                }
+                chainToReset = nil
+            }
+            Button("Cancel", role: .cancel) {
+                chainToReset = nil
+            }
+        } message: {
+            if let chain = chainToReset {
+                Text("This will reset the account authorization for \(chain.chainName). You can always upgrade your account again later.")
+            }
+        }
+        .confirmationDialog(
+            "Upgrade Account",
+            isPresented: $showingUpgradeConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Upgrade") {
+                if let chain = chainToUpgrade {
+                    Task {
+                        await upgradeAuthorization(for: chain.chainId)
+                    }
+                }
+                chainToUpgrade = nil
+            }
+            Button("Cancel", role: .cancel) {
+                chainToUpgrade = nil
+            }
+        } message: {
+            if let chain = chainToUpgrade {
+                Text("This will upgrade your account on \(chain.chainName) to use smart account functionality and will require a transaction on the network.")
+            }
+        }
         .task {
             await loadAuthorizations()
         }
+        .onAppear {
+            // Ensure loading happens even if .task doesn't trigger reliably
+            // Only load if we haven't loaded anything yet (empty results) and not currently loading
+            if authorizationStatuses.isEmpty && !isLoading {
+                Task {
+                    await loadAuthorizations()
+                }
+            }
+        }
         .refreshable {
             await loadAuthorizations()
+        }
+        .sheet(isPresented: $showingInfo) {
+            NavigationView {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        Text("What are Account Authorizations?")
+                            .font(.title2)
+                            .fontWeight(.bold)
+
+                        Text("Account authorizations allow your wallet to use advanced smart account functionality on different blockchain networks.")
+                            .font(.body)
+
+                        Text("Benefits:")
+                            .font(.headline)
+                            .padding(.top, 10)
+
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(alignment: .top, spacing: 12) {
+                                Text("•")
+                                Text("Enhanced security with multi-signature support")
+                            }
+                            HStack(alignment: .top, spacing: 12) {
+                                Text("•")
+                                Text("Batch transactions for better efficiency")
+                            }
+                            HStack(alignment: .top, spacing: 12) {
+                                Text("•")
+                                Text("Advanced automation features")
+                            }
+                            HStack(alignment: .top, spacing: 12) {
+                                Text("•")
+                                Text("Better gas optimization")
+                            }
+                        }
+
+                        Text("Automatic Upgrades:")
+                            .font(.headline)
+                            .padding(.top, 10)
+
+                        Text("Your account will automatically be upgraded at transaction time when an app requests batched transactions. This ensures compatibility with the latest features without manual intervention.")
+                            .font(.body)
+
+                        Text("Each blockchain network needs to be authorized separately. You can upgrade or reset authorizations for individual networks as needed.")
+                            .font(.body)
+                            .padding(.top, 10)
+
+                        Text("Technical Details:")
+                            .font(.headline)
+                            .padding(.top, 10)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Accounts are delegated to:")
+                                .font(.body)
+
+                            Text("0xe6Cae83BdE06E4c305530e199D7217f42808555B")
+                                .font(.system(.body, design: .monospaced))
+
+                            Button(action: {
+                                if let url = URL(string: "https://basescan.org/address/0xe6Cae83BdE06E4c305530e199D7217f42808555B#code") {
+                                    UIApplication.shared.open(url)
+                                }
+                            }) {
+                                Text("Learn more")
+                                    .font(.body)
+                                    .foregroundColor(.blue)
+                            }
+                        }
+
+                        Spacer()
+                    }
+                    .padding()
+                }
+                .navigationTitle("About Authorizations")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("Done") {
+                            showingInfo = false
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -81,18 +237,20 @@ struct AuthorizationsListView: View {
             if resettingChainId == status.chainId || upgradingChainId == status.chainId {
                 ProgressView()
                     .scaleEffect(0.8)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard resettingChainId == nil && upgradingChainId == nil else { return }
+
+            if isUpgraded {
+                // Show confirmation dialog for reset
+                chainToReset = status
+                showingResetConfirmation = true
             } else {
-                Button(isUpgraded ? "Reset" : "Upgrade") {
-                    Task {
-                        if isUpgraded {
-                            await resetAuthorization(for: status.chainId)
-                        } else {
-                            await upgradeAuthorization(for: status.chainId)
-                        }
-                    }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                // Show confirmation dialog for upgrade
+                chainToUpgrade = status
+                showingUpgradeConfirmation = true
             }
         }
     }
@@ -101,18 +259,27 @@ struct AuthorizationsListView: View {
     private func loadAuthorizations() async {
         isLoading = true
         errorMessage = nil
+        let startTime = Date()
 
         do {
             authorizationStatuses = try await AuthorizationsUtil.checkAllAuthorizations(for: address)
+        } catch is CancellationError {
+            // User cancelled the operation - don't show error
         } catch {
             errorMessage = error.localizedDescription
         }
 
-        isLoading = false
+        // Ensure loading state is properly updated on the main thread
+        await MainActor.run {
+            isLoading = false
+        }
     }
 
     private func resetAuthorization(for chainId: BigUInt) async {
-        resettingChainId = chainId
+        // Ensure spinner shows immediately on main thread
+        await MainActor.run {
+            resettingChainId = chainId
+        }
 
         do {
             let txHash = try await AuthorizationsUtil.resetAuthorization(for: address, on: chainId)
@@ -120,15 +287,28 @@ struct AuthorizationsListView: View {
             try await waitForTransactionConfirmation(txHash: txHash, chainId: chainId)
             // Reload authorizations to show updated status
             await loadAuthorizations()
+        } catch is CancellationError {
+            // User cancelled the operation - don't show error
         } catch {
-            errorMessage = "Failed to reset authorization: \(error.localizedDescription)"
+            // Check if this is an authentication cancellation error
+            if isAuthenticationCancellation(error) {
+                // User cancelled authentication - don't show error
+            } else {
+                errorMessage = "Failed to reset authorization: \(error.localizedDescription)"
+            }
         }
 
-        resettingChainId = nil
+        // Ensure spinner is hidden on main thread
+        await MainActor.run {
+            resettingChainId = nil
+        }
     }
 
     private func upgradeAuthorization(for chainId: BigUInt) async {
-        upgradingChainId = chainId
+        // Ensure spinner shows immediately on main thread
+        await MainActor.run {
+            upgradingChainId = chainId
+        }
 
         do {
             let txHash = try await AuthorizationsUtil.upgradeAuthorization(for: address, on: chainId)
@@ -136,11 +316,21 @@ struct AuthorizationsListView: View {
             try await waitForTransactionConfirmation(txHash: txHash, chainId: chainId)
             // Reload authorizations to show updated status
             await loadAuthorizations()
+        } catch is CancellationError {
+            // User cancelled the operation - don't show error
         } catch {
-            errorMessage = "Failed to upgrade authorization: \(error.localizedDescription)"
+            // Check if this is an authentication cancellation error
+            if isAuthenticationCancellation(error) {
+                // User cancelled authentication - don't show error
+            } else {
+                errorMessage = "Failed to upgrade authorization: \(error.localizedDescription)"
+            }
         }
 
-        upgradingChainId = nil
+        // Ensure spinner is hidden on main thread
+        await MainActor.run {
+            upgradingChainId = nil
+        }
     }
 
     private func waitForTransactionConfirmation(txHash: String, chainId: BigUInt, timeout: TimeInterval = 120.0) async throws {
@@ -183,6 +373,52 @@ struct AuthorizationsListView: View {
         }
 
         throw NSError(domain: "Authorization", code: 6, userInfo: [NSLocalizedDescriptionKey: "Transaction confirmation timeout after \(timeout) seconds"])
+    }
+
+    /// Check if an error is due to user cancelling authentication (biometrics/passcode)
+    private func isAuthenticationCancellation(_ error: Error) -> Bool {
+        // Check for Security framework errors (biometric/face ID cancellation)
+        if let nsError = error as NSError? {
+            // errSecUserCanceled = -128 (user cancelled the operation)
+            if nsError.domain == NSOSStatusErrorDomain && nsError.code == -128 {
+                return true
+            }
+
+            // Check for LocalAuthentication errors
+            if nsError.domain == "com.apple.LocalAuthentication" {
+                // LAError.userCancel = -2, LAError.userFallback = -3, etc.
+                if nsError.code == -2 || nsError.code == -3 || nsError.code == -4 {
+                    return true
+                }
+            }
+
+            // Check for other authentication-related errors
+            if nsError.domain == "com.apple.security" && nsError.code == -25293 {
+                // errSecAuthFailed - authentication failed
+                return true
+            }
+        }
+
+        // Check error description for common cancellation/auth failure messages
+        let description = error.localizedDescription.lowercased()
+        let cancellationKeywords = [
+            "cancelled",
+            "canceled",
+            "authentication cancelled",
+            "authentication canceled",
+            "user cancelled",
+            "user canceled",
+            "biometric authentication cancelled",
+            "biometric authentication canceled",
+            "face id cancelled",
+            "face id canceled",
+            "touch id cancelled",
+            "touch id canceled",
+            "passcode cancelled",
+            "passcode canceled"
+        ]
+
+        return cancellationKeywords.contains { description.contains($0) }
     }
 }
 
