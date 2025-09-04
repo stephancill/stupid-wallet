@@ -19,6 +19,14 @@ struct AuthorizationsListView: View {
     @State private var resettingChainId: BigUInt?
     @State private var upgradingChainId: BigUInt?
 
+    private var upgradedChains: [AuthorizationsUtil.AuthorizationStatus] {
+        authorizationStatuses.filter { $0.hasAuthorization }
+    }
+
+    private var notUpgradedChains: [AuthorizationsUtil.AuthorizationStatus] {
+        authorizationStatuses.filter { !$0.hasAuthorization && $0.error == nil }
+    }
+
     var body: some View {
         List {
             if isLoading {
@@ -36,8 +44,22 @@ struct AuthorizationsListView: View {
                     Spacer()
                 }
             } else {
-                ForEach(authorizationStatuses, id: \.chainId) { status in
-                    authorizationRow(for: status)
+                // Upgraded section
+                if !upgradedChains.isEmpty {
+                    Section(header: Text("Upgraded").font(.headline)) {
+                        ForEach(upgradedChains, id: \.chainId) { status in
+                            chainRow(for: status, isUpgraded: true)
+                        }
+                    }
+                }
+
+                // Not upgraded section
+                if !notUpgradedChains.isEmpty {
+                    Section(header: Text("Not upgraded yet").font(.headline)) {
+                        ForEach(notUpgradedChains, id: \.chainId) { status in
+                            chainRow(for: status, isUpgraded: false)
+                        }
+                    }
                 }
             }
         }
@@ -51,101 +73,30 @@ struct AuthorizationsListView: View {
         }
     }
 
-    private func authorizationRow(for status: AuthorizationsUtil.AuthorizationStatus) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(status.chainName)
-                    .font(.headline)
-                Spacer()
-                authorizationStatusBadge(for: status)
-            }
-
-            if status.hasAuthorization, let authorizedAddress = status.authorizedAddress {
-                HStack {
-                    Text("Authorized to: \(authorizedAddress)")
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                    Spacer()
-                    if resettingChainId == status.chainId {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                    } else {
-                        Button("Reset") {
-                            Task {
-                                await resetAuthorization(for: status.chainId)
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                    }
-                }
-            } else if let error = status.error {
-                Text("Error: \(error)")
-                    .font(.caption)
-                    .foregroundColor(.red)
+    private func chainRow(for status: AuthorizationsUtil.AuthorizationStatus, isUpgraded: Bool) -> some View {
+        HStack {
+            Text(status.chainName)
+                .font(.body)
+            Spacer()
+            if resettingChainId == status.chainId || upgradingChainId == status.chainId {
+                ProgressView()
+                    .scaleEffect(0.8)
             } else {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("No authorization found")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("Upgrade to EIP-7702 smart account")
-                            .font(.caption2)
-                            .foregroundColor(.secondary.opacity(0.7))
-                    }
-                    Spacer()
-                    if upgradingChainId == status.chainId {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                    } else {
-                        Button("Upgrade") {
-                            Task {
-                                await upgradeAuthorization(for: status.chainId)
-                            }
+                Button(isUpgraded ? "Reset" : "Upgrade") {
+                    Task {
+                        if isUpgraded {
+                            await resetAuthorization(for: status.chainId)
+                        } else {
+                            await upgradeAuthorization(for: status.chainId)
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
                     }
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
         }
-        .padding(.vertical, 4)
     }
 
-    private func authorizationStatusBadge(for status: AuthorizationsUtil.AuthorizationStatus) -> some View {
-        if status.hasAuthorization {
-            return AnyView(
-                Text("Authorized")
-                    .font(.caption)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(Color.green.opacity(0.2))
-                    .foregroundColor(.green)
-                    .cornerRadius(4)
-            )
-        } else if status.error != nil {
-            return AnyView(
-                Text("Error")
-                    .font(.caption)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(Color.red.opacity(0.2))
-                    .foregroundColor(.red)
-                    .cornerRadius(4)
-            )
-        } else {
-            return AnyView(
-                Text("Upgradable")
-                    .font(.caption)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(Color.blue.opacity(0.2))
-                    .foregroundColor(.blue)
-                    .cornerRadius(4)
-            )
-        }
-    }
 
     private func loadAuthorizations() async {
         isLoading = true
