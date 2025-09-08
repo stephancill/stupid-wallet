@@ -69,7 +69,7 @@ export function CallDecoder({ call, chain }: CallDecoderProps) {
           provider: client,
           ...whatsabi.loaders.defaultsWithEnv({
             SOURCIFY_CHAIN_ID: chain?.id.toString(),
-            ETHERSCAN_API_KEY: process.env.ETHERSCAN_API_KEY,
+            ETHERSCAN_API_KEY: import.meta.env.VITE_ETHERSCAN_API_KEY,
             ETHERSCAN_BASE_URL: etherscanBaseUrl,
           }),
         });

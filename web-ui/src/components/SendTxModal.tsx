@@ -1,10 +1,10 @@
-import Address from "@/components/Address";
 import { CallDecoder } from "@/components/CallDecoder";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
-import { Copy } from "lucide-react";
+import { RequestModal } from "@/components/RequestModal";
+import { SimulationComponent } from "@/components/SimulationComponent";
 import { Button } from "@/components/ui/button";
+import { useQuery } from "@tanstack/react-query";
+import { Copy } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import {
   createPublicClient,
   formatEther,
@@ -14,8 +14,6 @@ import {
   isHex,
 } from "viem";
 import * as chains from "viem/chains";
-import { RequestModal } from "@/components/RequestModal";
-import { cn } from "@/lib/utils";
 
 // Transaction types
 interface BaseTransaction {
@@ -287,6 +285,8 @@ export function SendTxModal({
               </div>
             </div>
           </div>
+
+          <SimulationComponent calls={calls} account={from} chain={chain} />
 
           {/* Show batch call details */}
           {isBatchCall && calls.length > 0 && (

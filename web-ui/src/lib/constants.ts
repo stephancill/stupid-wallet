@@ -1,3 +1,5 @@
+import { arbitrum, base, mainnet, optimism, polygon } from "viem/chains";
+
 export const UI_METHODS = [
   "eth_requestAccounts",
   "wallet_connect",
@@ -19,3 +21,16 @@ export const FAST_METHODS = [
 // Note: supported methods are also independently declared in
 // inject.js and background.js
 export const SUPPORTED_METHODS = [...FAST_METHODS, ...UI_METHODS] as const;
+
+const FIRST_PARTY_CHAINS = [
+  mainnet.id,
+  base.id,
+  arbitrum.id,
+  optimism.id,
+  polygon.id,
+];
+
+export const RPC_URLS = FIRST_PARTY_CHAINS.reduce((acc, chainId) => {
+  acc[chainId] = import.meta.env[`VITE_RPC_URL_${chainId}`];
+  return acc;
+}, {} as Record<number, string | undefined>);
