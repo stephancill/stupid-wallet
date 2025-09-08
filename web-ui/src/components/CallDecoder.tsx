@@ -2,7 +2,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import Address from "@/components/Address";
 import { whatsabi } from "@shazow/whatsabi";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   createPublicClient,
   decodeFunctionData,
@@ -22,6 +22,7 @@ interface Call {
 interface CallDecoderProps {
   call: Call;
   chain?: chains.Chain;
+  isExpanded?: boolean;
 }
 
 function stringifyWithBigInt(value: unknown) {
@@ -32,12 +33,24 @@ function stringifyWithBigInt(value: unknown) {
   );
 }
 
-export function CallDecoder({ call, chain }: CallDecoderProps) {
+export function CallDecoder({
+  call,
+  chain,
+  isExpanded: externalIsExpanded,
+}: CallDecoderProps) {
+  const [internalIsExpanded, setInternalIsExpanded] = useState(false);
+
+  // Use external expanded state if provided, otherwise use internal state
+  const isExpanded =
+    externalIsExpanded !== undefined ? externalIsExpanded : internalIsExpanded;
+
   const to = call.to || "(contract creation)";
   const dataHex = call.data || "0x";
   const valueEth =
     call.value && isHex(call.value)
-      ? formatEther(hexToBigInt(call.value))
+      ? parseFloat(formatEther(hexToBigInt(call.value)))
+          .toFixed(6)
+          .replace(/\.?0+$/, "")
       : "0";
 
   const {
@@ -226,8 +239,52 @@ export function CallDecoder({ call, chain }: CallDecoderProps) {
     return <span>{String(value)}</span>;
   };
 
-  return (
-    <div className="space-y-2">
+  // Simplified view component
+  const SimplifiedView = () => (
+    <div className="text-xs bg-muted p-3 rounded">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          {/* Address */}
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="font-mono text-sm">
+              {typeof to === "string" && to.startsWith("0x") ? (
+                <Address address={to} />
+              ) : (
+                to
+              )}
+            </div>
+            {abiLoadResult?.contractResult?.name && (
+              <span className="text-xs text-muted-foreground">
+                ({abiLoadResult.contractResult.name})
+              </span>
+            )}
+          </div>
+
+          {/* Function name if available */}
+          {decoded && (
+            <>
+              <span className="text-muted-foreground">•</span>
+              <span className="font-medium text-sm">
+                {decoded.functionName}
+              </span>
+            </>
+          )}
+
+          {/* Value */}
+          {valueEth !== "0" && (
+            <>
+              <span className="text-muted-foreground">•</span>
+              <span className="font-medium text-sm">{valueEth} ETH</span>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  // Full view component (existing content)
+  const FullView = () => (
+    <div className="space-y-2 bg-muted p-3 rounded">
       {/* Call summary */}
       <div className="grid grid-cols-[60px_1fr] gap-x-2 gap-y-1 text-sm">
         <div className="text-muted-foreground">To</div>
@@ -271,13 +328,13 @@ export function CallDecoder({ call, chain }: CallDecoderProps) {
             </div>
             <div className="bg-muted rounded-md">
               {(functionItem?.inputs?.length || 0) > 0 && (
-                <div className="divide-y divide-border rounded-md border">
+                <div className="divide-y divide-border rounded-md border gap-2">
                   {(decoded.args || []).map((arg: any, i: number) => {
                     const input = (functionItem?.inputs as any)?.[i] || {};
                     const label = input?.name || `arg${i}`;
                     const type = input?.type || "unknown";
                     return (
-                      <div key={i} className="p-2">
+                      <div key={i}>
                         <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
                           {label}
                           <span className="ml-1 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
@@ -296,7 +353,7 @@ export function CallDecoder({ call, chain }: CallDecoderProps) {
           </>
         ) : dataHex !== "0x" ? (
           <div>
-            <pre className="whitespace-pre-wrap font-mono break-words text-xs p-2 border rounded max-h-32 bg-muted">
+            <pre className="whitespace-pre-wrap font-mono break-words text-xs py-2 border rounded max-h-32 bg-muted">
               {dataHex}
             </pre>
           </div>
@@ -304,4 +361,6 @@ export function CallDecoder({ call, chain }: CallDecoderProps) {
       </div>
     </div>
   );
+
+  return isExpanded ? <FullView /> : <SimplifiedView />;
 }

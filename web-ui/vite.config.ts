@@ -37,7 +37,7 @@ export default defineConfig({
       },
     },
     sourcemap: false,
-    minify: "esbuild",
+    minify: isDev ? false : "esbuild",
     target: "es2020",
   },
   resolve: {

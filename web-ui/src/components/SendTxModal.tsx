@@ -83,6 +83,7 @@ export function SendTxModal({
 }: SendTxModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showCopied, setShowCopied] = useState(false);
+  const [allExpanded, setAllExpanded] = useState(false);
 
   // Detect if this is a batch call or single transaction using type guards
   const isBatchCall = method === "wallet_sendCalls";
@@ -291,27 +292,31 @@ export function SendTxModal({
           {/* Show batch call details */}
           {isBatchCall && calls.length > 0 && (
             <div className="space-y-3">
-              <div className="text-sm font-medium text-foreground">
-                Transaction Details ({calls.length} calls)
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium text-foreground">
+                  Details ({calls.length} calls)
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs h-7 px-2 text-muted-foreground hover:text-foreground"
+                  onClick={() => setAllExpanded(!allExpanded)}
+                >
+                  {allExpanded ? "Collapse All" : "Expand All"}
+                </Button>
               </div>
-              <div className="space-y-5">
+              <div className="space-y-3">
                 {calls.map((tx: BaseTransaction, index: number) => (
-                  <div
+                  <CallDecoder
                     key={(tx as BatchCall).id ?? index}
-                    className="space-y-3"
-                  >
-                    <div className="text-sm font-medium text-foreground">
-                      Call #{index + 1}
-                    </div>
-                    <CallDecoder
-                      call={{
-                        to: tx.to,
-                        data: tx.data || tx.input,
-                        value: tx.value,
-                      }}
-                      chain={chain}
-                    />
-                  </div>
+                    call={{
+                      to: tx.to,
+                      data: tx.data || tx.input,
+                      value: tx.value,
+                    }}
+                    chain={chain}
+                    isExpanded={allExpanded}
+                  />
                 ))}
               </div>
             </div>
@@ -319,8 +324,18 @@ export function SendTxModal({
 
           {!isBatchCall && (
             <div>
-              <div className="text-sm font-medium text-foreground mb-2">
-                Transaction Details
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-sm font-medium text-foreground">
+                  Details
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs h-7 px-2 text-muted-foreground hover:text-foreground"
+                  onClick={() => setAllExpanded(!allExpanded)}
+                >
+                  {allExpanded ? "Collapse" : "Expand"}
+                </Button>
               </div>
               <CallDecoder
                 call={{
@@ -329,6 +344,7 @@ export function SendTxModal({
                   value: primaryTransaction.value,
                 }}
                 chain={chain}
+                isExpanded={allExpanded}
               />
             </div>
           )}
