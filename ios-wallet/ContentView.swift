@@ -38,7 +38,7 @@ final class WalletViewModel: ObservableObject {
     @Published var privateKeyInput: String = ""
     @Published var isSaving: Bool = false
     @Published var errorMessage: String?
-    @Published var balances: [String: String] = [:] // network name -> formatted balance
+    @Published var balances: [String: BigUInt?] = [:] // network name -> raw balance in wei (nil for loading/error)
     @Published var biometryAvailable: Bool = false
 
     // Private key reveal functionality
@@ -222,9 +222,9 @@ final class WalletViewModel: ObservableObject {
 
     @MainActor
     func refreshAllBalances() async {
-        for (name, _, _) in Constants.Networks.networksList { balances[name] = "Loading..." }
+        for (name, _, _) in Constants.Networks.networksList { balances[name] = nil } // nil indicates loading
 
-        await withTaskGroup(of: (String, String).self) { group in
+        await withTaskGroup(of: (String, BigUInt?).self) { group in
             for (name, _, url) in Constants.Networks.networksList {
                 group.addTask { (name, await self.fetchBalance(rpcURL: url)) }
             }
@@ -235,14 +235,14 @@ final class WalletViewModel: ObservableObject {
         }
     }
 
-    func fetchBalance(rpcURL: String) async -> String {
+    func fetchBalance(rpcURL: String) async -> BigUInt? {
         do {
             let web3 = Web3(rpcURL: rpcURL)
             let address = try EthereumAddress(hex: addressHex, eip55: true)
             let qty: EthereumQuantity = try await web3.eth.getBalance(address: address, block: .latest).async()
-            return formatWeiToEth(qty.quantity)
+            return qty.quantity
         } catch {
-            return "Error"
+            return nil // nil indicates error
         }
     }
 
@@ -253,6 +253,13 @@ final class WalletViewModel: ObservableObject {
         let remainderStr = String(remainder).leftPadded(to: 18)
         let decimals = String(remainderStr.prefix(6))
         return "\(integer).\(decimals) ETH"
+    }
+
+    func formatBalanceForDisplay(_ balance: BigUInt?) -> String {
+        guard let balance = balance else {
+            return "Loading..."
+        }
+        return formatWeiToEth(balance)
     }
 
     @MainActor
@@ -419,11 +426,40 @@ struct ContentView: View {
 
                 Divider()
 
-                Group {
+                VStack(alignment: .leading, spacing: 8) {
                     Text("Balances")
                         .font(.headline)
-                    ForEach(Constants.Networks.networksList, id: \.name) { net in
-                        balanceRow(name: net.name, value: vm.balances[net.name])
+                    if Constants.Networks.networksList.filter({ net in
+                        if let balance = vm.balances[net.name], let balanceValue = balance {
+                            return balanceValue > 0
+                        } else {
+                            return false // hide loading/error states
+                        }
+                    }).isEmpty {
+                        // Check if any balances are still loading
+                        if Constants.Networks.networksList.contains(where: { net in
+                            vm.balances[net.name] == nil
+                        }) {
+                            balancesLoadingState
+                        } else {
+                            balancesEmptyState
+                        }
+                    } else {
+                        ForEach(Constants.Networks.networksList
+                            .filter({ net in
+                                if let balance = vm.balances[net.name], let balanceValue = balance {
+                                    return balanceValue > 0
+                                } else {
+                                    return false // hide loading/error states
+                                }
+                            })
+                            .sorted(by: { lhs, rhs in
+                                let lBalance = vm.balances[lhs.name] ?? BigUInt(0)
+                                let rBalance = vm.balances[rhs.name] ?? BigUInt(0)
+                                return lBalance! > rBalance!
+                            }), id: \.name) { net in
+                            balanceRow(name: net.name, balance: vm.balances[net.name]!)
+                        }
                     }
                 }
 
@@ -484,13 +520,35 @@ struct ContentView: View {
         }
     }
 
-    private func balanceRow(name: String, value: String?) -> some View {
+    private func balanceRow(name: String, balance: BigUInt?) -> some View {
         HStack {
             Text(name)
             Spacer()
-            Text(value ?? "–")
+            Text(vm.formatBalanceForDisplay(balance))
                 .font(.system(.footnote, design: .monospaced))
         }
+    }
+
+
+    private var balancesEmptyState: some View {
+        HStack(alignment: .center) {
+            Image(systemName: "tray")
+                .foregroundColor(.secondary)
+            Text("No balances to show")
+                .foregroundColor(.secondary)
+                .font(.footnote)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.vertical, 8)
+    }
+
+    private var balancesLoadingState: some View {
+        HStack(alignment: .center) {
+            ProgressView()
+                .scaleEffect(0.8)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.vertical, 8)
     }
 
     private var privateKeySheet: some View {
