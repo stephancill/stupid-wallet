@@ -245,10 +245,4 @@ xcodebuild -scheme ios-wallet -configuration Debug -destination 'generic/platfor
 - If you see `ReferenceError: process` from third‑party code in the content script, the Vite config defines `process.env`/`global` shims; ensure you’re using the repo’s `web-ui/vite.config.ts`.
 - If Xcode shows script sandbox denials when building the web‑ui: either disable `ENABLE_USER_SCRIPT_SANDBOXING` for the `safari` target, or add proper Input/Output file lists to the Run Script phase.
 
-### Roadmap
-
-- Expand EIP‑1193 support (signing, transactions).
-- Implement explicit user consent flows in the native app for `eth_requestAccounts` and signing.
-- Improve native↔︎extension messaging ergonomics.
-
 Thanks again for contributing!
