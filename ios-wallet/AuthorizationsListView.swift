@@ -89,11 +89,11 @@ struct AuthorizationsListView: View {
             }
         }
         .confirmationDialog(
-            "Reset Account Authorization",
+            "Downgrade Account",
             isPresented: $showingResetConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Reset", role: .destructive) {
+            Button("Downgrade", role: .destructive) {
                 if let chain = chainToReset {
                     Task {
                         await resetAuthorization(for: chain.chainId)
@@ -106,7 +106,7 @@ struct AuthorizationsListView: View {
             }
         } message: {
             if let chain = chainToReset {
-                Text("This will reset the account authorization for \(chain.chainName). You can always upgrade your account again later.")
+                Text("This will remove the smart account functionality for your account on \(chain.chainName). You can always upgrade your account again later.")
             }
         }
         .confirmationDialog(
