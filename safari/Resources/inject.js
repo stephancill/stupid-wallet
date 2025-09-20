@@ -361,7 +361,7 @@
         setTimeout(() => {
           window.removeEventListener("message", responseHandler);
           reject(new Error("Request timeout"));
-        }, 60000);
+        }, 60 * 60 * 1000);
       });
     }
 
