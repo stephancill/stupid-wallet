@@ -61,6 +61,11 @@ final class WalletViewModel: ObservableObject {
                 // Preflight to surface auth prompt on app open
                 _ = KeyManagement.preflightAuthentication(addressHex: addressHex)
             }
+        // Optimistically load persisted ENS before first render to avoid address flash
+        if hasWallet, !addressHex.isEmpty, let persisted = ENSService.shared.loadPersistedENS(for: addressHex) {
+            ensName = persisted.ens
+            ensAvatarURL = persisted.avatar
+        }
         if hasWallet {
             Task { 
                 await refreshAllBalances()
@@ -171,6 +176,12 @@ final class WalletViewModel: ObservableObject {
     
 
     func clearWallet() {
+        // Clear persisted ENS for this address first
+        let currentAddress = addressHex
+        if !currentAddress.isEmpty {
+            ENSService.shared.clearPersistedENS(for: currentAddress)
+        }
+
         if let defaults = UserDefaults(suiteName: appGroupId) {
             defaults.removeObject(forKey: "walletAddress")
             print("[Wallet] Cleared saved address from app group store")
@@ -265,7 +276,14 @@ final class WalletViewModel: ObservableObject {
     @MainActor
     func resolveENS() async {
         guard !addressHex.isEmpty else { return }
-        
+
+        // Optimistically load from persisted storage
+        if let persisted = ENSService.shared.loadPersistedENS(for: addressHex) {
+            ensName = persisted.ens
+            ensAvatarURL = persisted.avatar
+        }
+
+        // Refresh from network and persist
         let ensData = await ENSService.shared.resolveENS(for: addressHex)
         ensName = ensData?.ens
         ensAvatarURL = ensData?.avatar
@@ -301,11 +319,7 @@ struct ContentView: View {
     @ViewBuilder
     private func profileImage(size: CGFloat = 24) -> some View {
         if let avatarURL = vm.ensAvatarURL, let url = URL(string: avatarURL) {
-            AsyncImage(url: url) { image in
-                image
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } placeholder: {
+            PersistentCachedImage(url: url, cacheKey: "ens-avatar:" + vm.addressHex.lowercased(), folderName: "ens-avatars") {
                 if let blockies = blockiesImage(for: vm.addressHex, size: size) {
                     blockies
                         .resizable()
