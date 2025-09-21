@@ -303,6 +303,7 @@ struct ContentView: View {
     @StateObject private var vm = WalletViewModel()
     @State private var didCopyAddress = false
     @State private var showClearWalletConfirmation = false
+    @State private var showSettingsSheet = false
 
     // Generate blockies image for the address
     private func blockiesImage(for address: String, size: CGFloat = 24) -> Image? {
@@ -368,9 +369,18 @@ struct ContentView: View {
                 }
             }
             .navigationTitle("stupid wallet")
+            .toolbar {
+                if vm.hasWallet {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button(action: { showSettingsSheet = true }) {
+                            Image(systemName: "gear")
+                        }
+                    }
+                }
+            }
         }
-        .sheet(isPresented: $vm.showPrivateKeySheet) {
-            privateKeySheet
+        .sheet(isPresented: $showSettingsSheet) {
+            SettingsView(vm: vm, showClearWalletConfirmation: $showClearWalletConfirmation)
         }
     }
 
@@ -478,53 +488,6 @@ struct ContentView: View {
                 }
 
                 Divider()
-
-                VStack(spacing: 12) {
-                    HStack {
-                        NavigationLink(destination: AuthorizationsListView(address: vm.addressHex)) {
-                            Text("Authorizations")
-                        }
-                        Spacer()
-                    }
-
-                    HStack {
-                        Button(action: { vm.revealPrivateKey() }) {
-                            if vm.isRevealingPrivateKey {
-                                ProgressView()
-                            } else {
-                                Text("Show Private Key")
-                            }
-                        }
-                        Spacer()
-                    }
-                    
-
-
-                    HStack {
-                        Button(role: .destructive, action: { showClearWalletConfirmation = true }) {
-                            Text("Clear Wallet")
-                        }
-                        Spacer()
-                    }
-                    .confirmationDialog(
-                        "Clear Wallet",
-                        isPresented: $showClearWalletConfirmation,
-                        titleVisibility: .visible
-                    ) {
-                        Button("Clear Wallet", role: .destructive) {
-                            vm.clearWallet()
-                        }
-                        Button("Cancel", role: .cancel) { }
-                    } message: {
-                        Text("This will permanently delete your wallet and private key from this device. Make sure you have backed up your private key before proceeding.")
-                    }
-                }
-
-                if let error = vm.privateKeyError, !error.isEmpty {
-                    Text("Error: \(error)")
-                        .foregroundColor(.red)
-                        .font(.footnote)
-                }
             }
             .padding()
         }
@@ -565,7 +528,61 @@ struct ContentView: View {
         .padding(.vertical, 8)
     }
 
-    private var privateKeySheet: some View {
+}
+
+struct SettingsView: View {
+    @ObservedObject var vm: WalletViewModel
+    @Binding var showClearWalletConfirmation: Bool
+
+    var body: some View {
+        NavigationView {
+            List {
+                Section {
+                    NavigationLink(destination: AuthorizationsListView(address: vm.addressHex)) {
+                        Text("Authorizations")
+                    }
+                    NavigationLink(destination: PrivateKeyView(vm: vm)) {
+                        Text("Private Key")
+                    }
+                }
+
+                Section {
+                    Button(role: .destructive, action: { showClearWalletConfirmation = true }) {
+                        Text("Clear Wallet")
+                    }
+                }
+                .confirmationDialog(
+                    "Clear Wallet",
+                    isPresented: $showClearWalletConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button("Clear Wallet", role: .destructive) {
+                        vm.clearWallet()
+                    }
+                    Button("Cancel", role: .cancel) { }
+                } message: {
+                    Text("This will permanently delete your wallet and private key from this device. Make sure you have backed up your private key before proceeding.")
+                }
+
+                if let error = vm.privateKeyError, !error.isEmpty {
+                    Section {
+                        Text("Error: \(error)")
+                            .foregroundColor(.red)
+                            .font(.footnote)
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+}
+
+struct PrivateKeyView: View {
+    @ObservedObject var vm: WalletViewModel
+
+    var body: some View {
         Form {
             Section {
                 VStack(alignment: .leading, spacing: 8) {
@@ -590,33 +607,35 @@ struct ContentView: View {
                         .textSelection(.enabled)
                         .lineLimit(nil)
                         .padding(.vertical, 4)
-                } else {
-                    Text("No private key available")
-                        .foregroundColor(.secondary)
-                }
 
-                Button(action: { vm.copyPrivateKey() }) {
-                    Image(systemName: vm.didCopyPrivateKey ? "checkmark" : "doc.on.doc")
+                    Button(action: { vm.copyPrivateKey() }) {
+                        Image(systemName: vm.didCopyPrivateKey ? "checkmark" : "doc.on.doc")
+                    }
+                    .frame(maxWidth: .infinity, alignment: .center)
+                } else {
+                    Button(action: { vm.revealPrivateKey() }) {
+                        if vm.isRevealingPrivateKey {
+                            ProgressView()
+                        } else {
+                            Text("Reveal")
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .center)
                 }
-                .frame(maxWidth: .infinity, alignment: .center)
             }
 
             if let error = vm.privateKeyError, !error.isEmpty {
                 Section {
                     Text("Error: \(error)")
                         .foregroundColor(.red)
+                        .font(.footnote)
                 }
             }
         }
         .navigationTitle("Private Key")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button("Done") {
-                    vm.showPrivateKeySheet = false
-                    vm.revealedPrivateKey = "" // Clear for security
-                }
-            }
+        .onDisappear {
+            vm.revealedPrivateKey = ""
         }
     }
 }

@@ -153,44 +153,21 @@ struct AuthorizationsListView: View {
                             .font(.title2)
                             .fontWeight(.bold)
 
-                        Text("Account authorizations allow your wallet to use advanced smart account functionality on different blockchain networks.")
+                        Text("Account authorizations allow your wallet to use smart account functionality on different blockchain networks. stupid wallet uses this for transaction batching.")
                             .font(.body)
 
-                        Text("Benefits:")
+                        Text("Automatic Upgrades")
                             .font(.headline)
                             .padding(.top, 10)
 
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack(alignment: .top, spacing: 12) {
-                                Text("•")
-                                Text("Enhanced security with multi-signature support")
-                            }
-                            HStack(alignment: .top, spacing: 12) {
-                                Text("•")
-                                Text("Batch transactions for better efficiency")
-                            }
-                            HStack(alignment: .top, spacing: 12) {
-                                Text("•")
-                                Text("Advanced automation features")
-                            }
-                            HStack(alignment: .top, spacing: 12) {
-                                Text("•")
-                                Text("Better gas optimization")
-                            }
-                        }
-
-                        Text("Automatic Upgrades:")
-                            .font(.headline)
-                            .padding(.top, 10)
-
-                        Text("Your account will automatically be upgraded at transaction time when an app requests batched transactions. This ensures compatibility with the latest features without manual intervention.")
+                        Text("Your account will automatically be upgraded at transaction time when an app requests batched transactions.")
                             .font(.body)
 
                         Text("Each blockchain network needs to be authorized separately. You can upgrade or reset authorizations for individual networks as needed.")
                             .font(.body)
                             .padding(.top, 10)
 
-                        Text("Technical Details:")
+                        Text("Technical Details")
                             .font(.headline)
                             .padding(.top, 10)
 
