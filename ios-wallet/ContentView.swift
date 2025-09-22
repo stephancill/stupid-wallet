@@ -172,6 +172,9 @@ struct ContentView: View {
                                     Text("♦ \(totalEthDisplay())")
                                         .font(.system(size: 48, weight: .bold))
                                         .foregroundColor(.primary)
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.4)
+                                        .allowsTightening(true)
                                 }
                                 Image(systemName: "chevron.down")
                                     .foregroundColor(.secondary)
