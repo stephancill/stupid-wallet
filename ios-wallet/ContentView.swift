@@ -6,298 +6,7 @@
 //
 
 import SwiftUI
-import UIKit
-import Security
-import LocalAuthentication
-import Web3
-import Web3PromiseKit
-import PromiseKit
 import BigInt
-import Wallet
-import Model
-import CoreGraphics
-
-private let appGroupId = "group.co.za.stephancill.stupid-wallet" // TODO: set your App Group ID in project capabilities
-
-// Bridge PromiseKit to async/await
-extension Promise {
-    func async() async throws -> T {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<T, Error>) in
-            self.done { value in
-                continuation.resume(returning: value)
-            }.catch { error in
-                continuation.resume(throwing: error)
-            }
-        }
-    }
-}
-
-final class WalletViewModel: ObservableObject {
-    @Published var hasWallet: Bool = false
-    @Published var addressHex: String = ""
-    @Published var privateKeyInput: String = ""
-    @Published var isSaving: Bool = false
-    @Published var errorMessage: String?
-    @Published var balances: [String: BigUInt?] = [:] // network name -> raw balance in wei (nil for loading/error)
-    @Published var biometryAvailable: Bool = false
-
-    // Private key reveal functionality
-    @Published var showPrivateKeySheet: Bool = false
-    @Published var revealedPrivateKey: String = ""
-    @Published var isRevealingPrivateKey: Bool = false
-    @Published var privateKeyError: String?
-    @Published var didCopyPrivateKey: Bool = false
-
-    // ENS properties
-    @Published var ensName: String?
-    @Published var ensAvatarURL: String?
-
-    init() {
-        loadPersistedAddress()
-        biometryAvailable = isBiometrySupported()
-                    // Ensure ciphertext is available to the Safari extension on first run after updates
-            if hasWallet, !addressHex.isEmpty {
-                KeyManagement.syncCiphertextToSharedGroupIfNeeded(addressHex: addressHex)
-                // Preflight to surface auth prompt on app open
-                _ = KeyManagement.preflightAuthentication(addressHex: addressHex)
-            }
-        // Optimistically load persisted ENS before first render to avoid address flash
-        if hasWallet, !addressHex.isEmpty, let persisted = ENSService.shared.loadPersistedENS(for: addressHex) {
-            ensName = persisted.ens
-            ensAvatarURL = persisted.avatar
-        }
-        if hasWallet {
-            Task { 
-                await refreshAllBalances()
-                await resolveENS()
-            }
-        }
-    }
-
-    func loadPersistedAddress() {
-        let defaults = UserDefaults(suiteName: appGroupId)
-        if defaults == nil {
-            print("[Wallet] ERROR: Failed to open UserDefaults for app group: \(appGroupId)")
-        }
-        let addr = defaults?.string(forKey: "walletAddress")
-        if let addr = addr, !addr.isEmpty {
-            print("[Wallet] Loaded address from app group store")
-            addressHex = addr
-            hasWallet = true
-        } else {
-            print("[Wallet] No address stored under key 'walletAddress'")
-            hasWallet = false
-            addressHex = ""
-        }
-    }
-
-    
-
-    func isBiometrySupported() -> Bool {
-        let ctx = LAContext()
-        var err: NSError?
-        let ok = ctx.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &err)
-        return ok
-    }
-
-    func savePrivateKey() {
-        errorMessage = nil
-        isSaving = true
-        defer { isSaving = false }
-
-        let trimmed = privateKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            errorMessage = "Private key is empty"
-            return
-        }
-
-        do {
-            // Convert hex string to bytes
-            let hexNoPrefix = trimmed.lowercased().hasPrefix("0x") ? String(trimmed.dropFirst(2)) : trimmed
-            var rawBytes: [UInt8] = []
-            rawBytes.reserveCapacity(hexNoPrefix.count / 2)
-            var idx = hexNoPrefix.startIndex
-            while idx < hexNoPrefix.endIndex {
-                let next = hexNoPrefix.index(idx, offsetBy: 2)
-                let byteStr = hexNoPrefix[idx..<next]
-                if let b = UInt8(byteStr, radix: 16) { rawBytes.append(b) }
-                idx = next
-            }
-
-            // Encrypt and store securely via KeyManagement helper
-            try KeyManagement.encryptPrivateKey(rawBytes: rawBytes, requireBiometricsOnly: false)
-
-            // Derive address from the raw bytes using Web3
-            let privateKeyData = Data(rawBytes)
-            let privateKey = try EthereumPrivateKey(privateKeyData)
-            let address = privateKey.address
-            let addr = address.hex(eip55: true)
-            addressHex = addr
-            hasWallet = true
-            if let defaults = UserDefaults(suiteName: appGroupId) {
-                defaults.set(addr, forKey: "walletAddress")
-                print("[Wallet] Saved address to app group store")
-            } else {
-                print("[Wallet] ERROR: Could not open app group defaults to save address")
-            }
-            Task { 
-                await refreshAllBalances()
-                await resolveENS()
-            }
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    func createNewWallet() {
-        errorMessage = nil
-        isSaving = true
-        defer { isSaving = false }
-
-        do {
-            let wallet = try KeyManagement.createWallet(requireBiometricsOnly: false)
-            addressHex = try wallet.address.eip55Description
-            hasWallet = true
-            if let defaults = UserDefaults(suiteName: appGroupId) {
-                defaults.set(addressHex, forKey: "walletAddress")
-                print("[Wallet] Saved address to app group store (new wallet)")
-            } else {
-                print("[Wallet] ERROR: Could not open app group defaults to save new wallet")
-            }
-            Task { 
-                await refreshAllBalances()
-                await resolveENS()
-            }
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    
-
-    func clearWallet() {
-        // Clear persisted ENS for this address first
-        let currentAddress = addressHex
-        if !currentAddress.isEmpty {
-            ENSService.shared.clearPersistedENS(for: currentAddress)
-        }
-
-        if let defaults = UserDefaults(suiteName: appGroupId) {
-            defaults.removeObject(forKey: "walletAddress")
-            print("[Wallet] Cleared saved address from app group store")
-        } else {
-            print("[Wallet] ERROR: Could not open app group defaults to clear address")
-        }
-        addressHex = ""
-        hasWallet = false
-        balances.removeAll()
-        ensName = nil
-        ensAvatarURL = nil
-        errorMessage = nil
-    }
-
-    func revealPrivateKey() {
-        privateKeyError = nil
-        isRevealingPrivateKey = true
-        revealedPrivateKey = ""
-
-        Task {
-            do {
-                let account = EthereumAccount(address: try Model.EthereumAddress(hex: addressHex))
-                let hexKey = try account.accessPrivateKey(accessGroup: Constants.accessGroup) { privateKeyBytes in
-                    return "0x" + privateKeyBytes.map { String(format: "%02x", $0) }.joined()
-                }
-
-                await MainActor.run {
-                    revealedPrivateKey = hexKey
-                    showPrivateKeySheet = true
-                    isRevealingPrivateKey = false
-                }
-            } catch {
-                await MainActor.run {
-                    privateKeyError = error.localizedDescription
-                    isRevealingPrivateKey = false
-                }
-            }
-        }
-    }
-
-    func copyPrivateKey() {
-        guard !revealedPrivateKey.isEmpty else { return }
-        UIPasteboard.general.string = revealedPrivateKey
-        didCopyPrivateKey = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            self.didCopyPrivateKey = false
-        }
-    }
-
-    @MainActor
-    func refreshAllBalances() async {
-        for (name, _, _) in Constants.Networks.networksList { balances[name] = nil } // nil indicates loading
-
-        await withTaskGroup(of: (String, BigUInt?).self) { group in
-            for (name, _, url) in Constants.Networks.networksList {
-                group.addTask { (name, await self.fetchBalance(rpcURL: url)) }
-            }
-
-            for await (network, balance) in group {
-                balances[network] = balance
-            }
-        }
-    }
-
-    func fetchBalance(rpcURL: String) async -> BigUInt? {
-        do {
-            let web3 = Web3(rpcURL: rpcURL)
-            let address = try EthereumAddress(hex: addressHex, eip55: true)
-            let qty: EthereumQuantity = try await web3.eth.getBalance(address: address, block: .latest).async()
-            return qty.quantity
-        } catch {
-            return nil // nil indicates error
-        }
-    }
-
-    func formatWeiToEth(_ wei: BigUInt) -> String {
-        let divisor = BigUInt(1_000_000_000_000_000_000)
-        let integer = wei / divisor
-        let remainder = wei % divisor
-        let remainderStr = String(remainder).leftPadded(to: 18)
-        let decimals = String(remainderStr.prefix(6))
-        return "\(integer).\(decimals) ETH"
-    }
-
-    func formatBalanceForDisplay(_ balance: BigUInt?) -> String {
-        guard let balance = balance else {
-            return "Loading..."
-        }
-        return formatWeiToEth(balance)
-    }
-
-    @MainActor
-    func resolveENS() async {
-        guard !addressHex.isEmpty else { return }
-
-        // Optimistically load from persisted storage
-        if let persisted = ENSService.shared.loadPersistedENS(for: addressHex) {
-            ensName = persisted.ens
-            ensAvatarURL = persisted.avatar
-        }
-
-        // Refresh from network and persist
-        let ensData = await ENSService.shared.resolveENS(for: addressHex)
-        ensName = ensData?.ens
-        ensAvatarURL = ensData?.avatar
-    }
-    
-
-}
-
-private extension String {
-    func leftPadded(to length: Int, with pad: Character = "0") -> String {
-        if count >= length { return self }
-        return String(repeating: String(pad), count: length - count) + self
-    }
-}
 
 struct ContentView: View {
     @StateObject private var vm = WalletViewModel()
@@ -326,14 +35,14 @@ struct ContentView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                 } else {
-                    RoundedRectangle(cornerRadius: 4)
+                    RoundedRectangle(cornerRadius: size/2)
                         .fill(Color.gray.opacity(0.3))
                 }
             }
             .frame(width: size, height: size)
-            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .clipShape(RoundedRectangle(cornerRadius: size/2))
             .overlay(
-                RoundedRectangle(cornerRadius: 4)
+                RoundedRectangle(cornerRadius: size/2)
                     .stroke(Color.gray.opacity(0.2), lineWidth: 1)
             )
         } else if let blockies = blockiesImage(for: vm.addressHex, size: size) {
@@ -341,9 +50,9 @@ struct ContentView: View {
                 .resizable()
                 .aspectRatio(contentMode: .fill)
                 .frame(width: size, height: size)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(RoundedRectangle(cornerRadius: size/2))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 4)
+                    RoundedRectangle(cornerRadius: size/2)
                         .stroke(Color.gray.opacity(0.2), lineWidth: 1)
                 )
         }
@@ -359,6 +68,15 @@ struct ContentView: View {
         return "0x\(first4)...\(last4)"
     }
 
+    func copyAddress() {
+        guard !vm.addressHex.isEmpty else { return }
+        UIPasteboard.general.string = vm.addressHex
+        didCopyAddress = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            self.didCopyAddress = false
+        }
+    }
+
     var body: some View {
         NavigationView {
             Group {
@@ -368,7 +86,6 @@ struct ContentView: View {
                     setupView
                 }
             }
-            .navigationTitle("stupid wallet")
             .toolbar {
                 if vm.hasWallet {
                     ToolbarItem(placement: .navigationBarTrailing) {
@@ -414,82 +131,80 @@ struct ContentView: View {
 
     private var walletView: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Group {
-                    Text("Address")
-                        .font(.headline)
-                    HStack(alignment: .center, spacing: 8) {
-                        profileImage(size: 32)
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            if let ensName = vm.ensName, !ensName.isEmpty {
-                                Text(ensName)
-                                    .font(.system(.body, design: .default))
-                                    .foregroundColor(.primary)
-                                Text(truncatedAddress(vm.addressHex))
-                                    .font(.system(.caption, design: .monospaced))
+            VStack {
+                Spacer()
+                VStack(alignment: .center, spacing: 24) {
+                    HStack {
+                        Spacer()
+                        Menu {
+                            if isBalancesLoading() {
+                                Text("Loading balances...")
+                                    .foregroundColor(.secondary)
+                            } else if Constants.Networks.networksList.filter({ net in
+                                if let balance = vm.balances[net.name], let value = balance { return value > 0 }
+                                return false
+                            }).isEmpty {
+                                Text("No balances to show")
                                     .foregroundColor(.secondary)
                             } else {
-                                Text(truncatedAddress(vm.addressHex))
-                                    .font(.system(.footnote, design: .monospaced))
-                            }
-                        }
-                        Spacer()
-                        Button(action: {
-                            UIPasteboard.general.string = vm.addressHex
-                            didCopyAddress = true
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                                didCopyAddress = false
-                            }
-                        }) {
-                            Image(systemName: didCopyAddress ? "checkmark" : "doc.on.doc")
-                        }
-                    }
-                    
-                }
-
-                Divider()
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Balances")
-                        .font(.headline)
-                    if Constants.Networks.networksList.filter({ net in
-                        if let balance = vm.balances[net.name], let balanceValue = balance {
-                            return balanceValue > 0
-                        } else {
-                            return false // hide loading/error states
-                        }
-                    }).isEmpty {
-                        // Check if any balances are still loading
-                        if Constants.Networks.networksList.contains(where: { net in
-                            vm.balances[net.name] == nil
-                        }) {
-                            balancesLoadingState
-                        } else {
-                            balancesEmptyState
-                        }
-                    } else {
-                        ForEach(Constants.Networks.networksList
-                            .filter({ net in
-                                if let balance = vm.balances[net.name], let balanceValue = balance {
-                                    return balanceValue > 0
-                                } else {
-                                    return false // hide loading/error states
+                                ForEach(Constants.Networks.networksList
+                                    .filter({ net in
+                                        if let balance = vm.balances[net.name], let value = balance { return value > 0 }
+                                        return false
+                                    })
+                                    .sorted(by: { lhs, rhs in
+                                        let lBalance = vm.balances[lhs.name] ?? BigUInt(0)
+                                        let rBalance = vm.balances[rhs.name] ?? BigUInt(0)
+                                        return lBalance! > rBalance!
+                                    }), id: \.name) { net in
+                                    Text("\(net.name) • \(vm.formatBalanceForDisplay(vm.balances[net.name] ?? nil))")
+                                        .font(.system(.footnote, design: .monospaced))
+                                        .foregroundColor(.secondary)
+                                    .disabled(true)
                                 }
-                            })
-                            .sorted(by: { lhs, rhs in
-                                let lBalance = vm.balances[lhs.name] ?? BigUInt(0)
-                                let rBalance = vm.balances[rhs.name] ?? BigUInt(0)
-                                return lBalance! > rBalance!
-                            }), id: \.name) { net in
-                            balanceRow(name: net.name, balance: vm.balances[net.name]!)
+                            }
+                        } label: {
+                            HStack(alignment: .center, spacing: 8) {
+                                if isBalancesLoading() {
+                                    ProgressView()
+                                        .scaleEffect(1.0)
+                                } else {
+                                    Text("♦ \(totalEthDisplay())")
+                                        .font(.system(size: 48, weight: .bold))
+                                        .foregroundColor(.primary)
+                                }
+                                Image(systemName: "chevron.down")
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .menuStyle(.borderlessButton)
+                        Spacer()
+                    }
+
+                    Button(action: { copyAddress() }) {
+                        HStack(spacing: 6) {
+                            profileImage(size: 24)
+                            if let ensName = vm.ensName, !ensName.isEmpty {
+                                Text(ensName)
+                                    .font(.title3)
+                                    .frame(height: 24)
+                            } else {
+                                Text(truncatedAddress(vm.addressHex))
+                                    .font(.system(.title3, design: .monospaced))
+                                    .frame(height: 24)
+                            }
+                            Image(systemName: didCopyAddress ? "checkmark" : "doc.on.doc")
+                                .foregroundColor(.secondary)
+                                .frame(width: 20)
                         }
                     }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .center)
                 }
-
-                Divider()
+                .padding()
+                Spacer()
             }
-            .padding()
+            .frame(minHeight: UIScreen.main.bounds.height - 200) // Account for navigation bar and safe areas
         }
         .refreshable {
             await vm.refreshAllBalances()
@@ -501,9 +216,25 @@ struct ContentView: View {
         HStack {
             Text(name)
             Spacer()
-            Text(vm.formatBalanceForDisplay(balance))
+            Text("♦ \(vm.formatBalanceForDisplay(balance))")
                 .font(.system(.footnote, design: .monospaced))
         }
+    }
+
+    private func totalEthDisplay() -> String {
+        var total = BigUInt(0)
+        for (name, _, _) in Constants.Networks.networksList {
+            if let maybe = vm.balances[name], let balance = maybe {
+                total += balance
+            }
+        }
+        return vm.formatWeiToEth(total)
+    }
+
+    private func isBalancesLoading() -> Bool {
+        return Constants.Networks.networksList.contains(where: { net in
+            vm.balances[net.name] == nil
+        })
     }
 
 
@@ -530,115 +261,8 @@ struct ContentView: View {
 
 }
 
-struct SettingsView: View {
-    @ObservedObject var vm: WalletViewModel
-    @Binding var showClearWalletConfirmation: Bool
+// Lists balances per network
 
-    var body: some View {
-        NavigationView {
-            List {
-                Section {
-                    NavigationLink(destination: AuthorizationsListView(address: vm.addressHex)) {
-                        Text("Authorizations")
-                    }
-                    NavigationLink(destination: PrivateKeyView(vm: vm)) {
-                        Text("Private Key")
-                    }
-                }
-
-                Section {
-                    Button(role: .destructive, action: { showClearWalletConfirmation = true }) {
-                        Text("Clear Wallet")
-                    }
-                }
-                .confirmationDialog(
-                    "Clear Wallet",
-                    isPresented: $showClearWalletConfirmation,
-                    titleVisibility: .visible
-                ) {
-                    Button("Clear Wallet", role: .destructive) {
-                        vm.clearWallet()
-                    }
-                    Button("Cancel", role: .cancel) { }
-                } message: {
-                    Text("This will permanently delete your wallet and private key from this device. Make sure you have backed up your private key before proceeding.")
-                }
-
-                if let error = vm.privateKeyError, !error.isEmpty {
-                    Section {
-                        Text("Error: \(error)")
-                            .foregroundColor(.red)
-                            .font(.footnote)
-                    }
-                }
-            }
-            .listStyle(.insetGrouped)
-            .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
-        }
-    }
-}
-
-struct PrivateKeyView: View {
-    @ObservedObject var vm: WalletViewModel
-
-    var body: some View {
-        Form {
-            Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label {
-                        Text("Security Warning")
-                    } icon: {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
-                    }
-                    .font(.headline)
-
-                    Text("Your private key gives full access to your wallet and funds. Never share it with anyone, and keep it secure.")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-            }
-
-            Section("Private Key") {
-                if !vm.revealedPrivateKey.isEmpty {
-                    Text(vm.revealedPrivateKey)
-                        .font(.system(.body, design: .monospaced))
-                        .textSelection(.enabled)
-                        .lineLimit(nil)
-                        .padding(.vertical, 4)
-
-                    Button(action: { vm.copyPrivateKey() }) {
-                        Image(systemName: vm.didCopyPrivateKey ? "checkmark" : "doc.on.doc")
-                    }
-                    .frame(maxWidth: .infinity, alignment: .center)
-                } else {
-                    Button(action: { vm.revealPrivateKey() }) {
-                        if vm.isRevealingPrivateKey {
-                            ProgressView()
-                        } else {
-                            Text("Reveal")
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .center)
-                }
-            }
-
-            if let error = vm.privateKeyError, !error.isEmpty {
-                Section {
-                    Text("Error: \(error)")
-                        .foregroundColor(.red)
-                        .font(.footnote)
-                }
-            }
-        }
-        .navigationTitle("Private Key")
-        .navigationBarTitleDisplayMode(.inline)
-        .onDisappear {
-            vm.revealedPrivateKey = ""
-        }
-    }
-}
 
 #Preview {
     ContentView()
