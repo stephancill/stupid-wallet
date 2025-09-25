@@ -242,9 +242,8 @@ export function CallDecoder({
   // Simplified view component
   const SimplifiedView = () => (
     <div className="text-xs bg-muted p-3 rounded">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3 flex-1 min-w-0">
-          {/* Address */}
+      <div className="space-y-1">
+        <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-2 min-w-0">
             <div className="font-mono text-sm">
               {typeof to === "string" && to.startsWith("0x") ? (
@@ -259,25 +258,15 @@ export function CallDecoder({
               </span>
             )}
           </div>
-
-          {/* Function name if available */}
-          {decoded && (
-            <>
-              <span className="text-muted-foreground">•</span>
-              <span className="font-medium text-sm">
-                {decoded.functionName}
-              </span>
-            </>
-          )}
-
-          {/* Value */}
           {valueEth !== "0" && (
-            <>
-              <span className="text-muted-foreground">•</span>
-              <span className="font-medium text-sm">{valueEth} ETH</span>
-            </>
+            <span className="font-medium text-sm">{valueEth} ETH</span>
           )}
         </div>
+        {decoded && (
+          <div className="font-medium text-sm text-foreground">
+            {decoded.functionName}
+          </div>
+        )}
       </div>
     </div>
   );
