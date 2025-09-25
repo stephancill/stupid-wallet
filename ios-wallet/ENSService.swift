@@ -15,12 +15,13 @@ final class ENSService {
     private let cache = NSCache<NSString, ENSData>()
     private let ensKeyPrefix = "ensData:"
     private var defaults: UserDefaults? { UserDefaults(suiteName: Constants.appGroupId) }
-    
+
     private init() {}
-    
+
     // MARK: - Helpers
     private func normalizedAddress(_ address: String) -> String { address.lowercased() }
     private func ensDefaultsKey(for address: String) -> String { ensKeyPrefix + normalizedAddress(address) }
+    private func cacheKey(for address: String) -> NSString { normalizedAddress(address) as NSString }
 
     // MARK: - ENS metadata persisted storage
     func loadPersistedENS(for address: String) -> ENSData? {
@@ -50,23 +51,35 @@ final class ENSService {
 
     // MARK: - ENS network resolve
     func resolveENS(for address: String) async -> ENSData? {
-        if let cached = cache.object(forKey: address as NSString) {
+        let key = cacheKey(for: address)
+        if let cached = cache.object(forKey: key) {
             return cached
         }
-        
-        guard let url = URL(string: "https://ensdata.net/\(address)") else { return nil }
-        
+
+        guard let url = URL(string: "https://ensdata.net/\(address)") else {
+            if let persisted = loadPersistedENS(for: address) {
+                cache.setObject(persisted, forKey: key)
+                return persisted
+            }
+            return nil
+        }
+
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
+            let (data, response) = try await URLSession.shared.data(from: url)
+            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                throw URLError(.badServerResponse)
+            }
+
             let ensData = try JSONDecoder().decode(ENSData.self, from: data)
-            cache.setObject(ensData, forKey: address as NSString)
+            cache.setObject(ensData, forKey: key)
             persistENS(ensData, for: address)
             return ensData
         } catch {
-            let emptyData = ENSData(ens: nil, avatar: nil)
-            cache.setObject(emptyData, forKey: address as NSString)
-            persistENS(emptyData, for: address)
-            return emptyData
+            if let persisted = loadPersistedENS(for: address) {
+                cache.setObject(persisted, forKey: key)
+                return persisted
+            }
+            return cache.object(forKey: key)
         }
     }
 }
