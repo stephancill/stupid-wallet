@@ -423,6 +423,17 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         let maxFeePerGasHex = tx["maxFeePerGas"] as? String
         let maxPriorityFeePerGasHex = tx["maxPriorityFeePerGas"] as? String
 
+        let transactionData: EthereumData? = {
+            guard dataHex != "0x" else { return nil }
+            guard let rawData = Data(hexString: dataHex) else {
+                return nil
+            }
+            return try? EthereumData(rawData)
+        }()
+        if dataHex != "0x" && transactionData == nil {
+            return ["error": "Invalid transaction data"]
+        }
+
         do {
             let (rpcURL, chainIdBig) = Constants.Networks.currentNetwork()
             let web3 = Web3(rpcURL: rpcURL)
@@ -460,10 +471,32 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             let weiValue = BigUInt.fromHexQuantity(valueHex) ?? BigUInt.zero
 
             // Gas limit: provided or sane default
-            let gasLimitQty: BigUInt = {
-                if let gasHex = gasHex, let g = BigUInt.fromHexQuantity(gasHex) { return g }
-                return (dataHex == "0x") ? BigUInt(21000) : BigUInt(100000)
-            }()
+        let gasLimitQty: BigUInt
+        if let gasHex = gasHex, let g = BigUInt.fromHexQuantity(gasHex) {
+            gasLimitQty = g
+        } else {
+            guard let toForEstimate = toAddr else {
+                return ["error": "Missing 'to' address"]
+            }
+            let call = EthereumCall(
+                from: fromAddr,
+                to: toForEstimate,
+                gas: nil,
+                gasPrice: nil,
+                value: EthereumQuantity(quantity: weiValue),
+                data: transactionData
+            )
+
+            switch awaitPromise(web3.eth.estimateGas(call: call)) {
+            case .success(let estimate):
+                let base = estimate.quantity
+                let buffer = max(base / BigUInt(5), BigUInt(1_500))
+                let padded = base + buffer
+                gasLimitQty = max(padded, BigUInt(21_000))
+            case .failure(let error):
+                return ["error": "Failed to estimate gas: \(error.localizedDescription)"]
+            }
+        }
 
             // Build base tx
             var txToSign = try EthereumTransaction(
@@ -520,7 +553,7 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             }
 
             // Data
-            if dataHex != "0x", let raw = Data(hexString: dataHex) {
+            if let calldata = transactionData {
                 // Require 'to' for data txs to avoid accidental contract creation
                 if toAddr == nil {
                     return ["error": "Missing 'to' for transaction with data"]
@@ -534,7 +567,7 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
                 case .failure:
                     break
                 }
-                txToSign.data = try EthereumData(raw)
+                txToSign.data = calldata
             }
             
             // Sign (non-exportable key) by hashing the tx message and using account.signDigest
