@@ -23,6 +23,10 @@ An iOS/macOS SwiftUI wallet app bundled with a Safari Web Extension that injects
 - **Secure key management**: Encrypts the private key using a [fork of Dawn Key Management](https://github.com/stephancill/dawn-key-management)
 - **Balances**: Displays ETH balances on Ethereum, Base, Arbitrum One, and Optimism
 
+### Activity Log
+
+See `docs/ActivityLog.md` for the Activity View and SQLite-backed Activity Log design.
+
 ## Contributing
 
 Please read `CONTRIBUTING.md` for architecture details, development setup, style guides, and contribution workflow.

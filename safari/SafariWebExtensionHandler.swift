@@ -127,7 +127,7 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
       return handleSignTypedDataV4(params: params)
     case "eth_sendTransaction":
       let params = messageDict["params"] as? [Any]
-      return handleSendTransaction(params: params)
+      return handleSendTransaction(params: params, appMetadata: appMetadata)
     case "wallet_addEthereumChain":
       let params = messageDict["params"] as? [Any]
       return handleAddEthereumChain(params: params)
@@ -136,7 +136,7 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
       return handleSwitchEthereumChain(params: params)
     case "wallet_sendCalls":
       let params = messageDict["params"] as? [Any]
-      return await handleWalletSendCalls(params: params)
+      return await handleWalletSendCalls(params: params, appMetadata: appMetadata)
     case "wallet_getCapabilities":
       let params = messageDict["params"] as? [Any]
       return handleWalletGetCapabilities(params: params)
@@ -415,7 +415,7 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     }
   }
 
-  private func handleSendTransaction(params: [Any]?) -> [String: Any] {
+  private func handleSendTransaction(params: [Any]?, appMetadata: AppMetadata) -> [String: Any] {
     guard let params = params, params.count >= 1 else {
       return ["error": "Invalid eth_sendTransaction params"]
     }
@@ -650,7 +650,25 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
       // Send
       switch awaitPromise(web3.eth.sendRawTransaction(transaction: signedTx)) {
       case .success(let txHash):
-        return ["result": txHash.hex()]
+        let hashHex = txHash.hex()
+        // Best-effort logging; failures must not affect RPC response
+        do {
+          let app = ActivityStore.AppMetadata(
+            domain: appMetadata.domain,
+            uri: appMetadata.uri,
+            scheme: appMetadata.scheme
+          )
+          try ActivityStore.shared.logTransaction(
+            txHash: hashHex,
+            chainIdHex: Constants.Networks.getCurrentChainIdHex(),
+            method: "eth_sendTransaction",
+            fromAddress: getSavedAddress(),
+            app: app
+          )
+        } catch {
+          // ignore
+        }
+        return ["result": hashHex]
       case .failure(let e):
         return ["error": "Failed to send transaction: \(e.localizedDescription)"]
       }
@@ -687,7 +705,7 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     return customNetworks[chainId] != nil
   }
 
-  private func handleWalletSendCalls(params: [Any]?) async -> [String: Any] {
+  private func handleWalletSendCalls(params: [Any]?, appMetadata: AppMetadata) async -> [String: Any] {
     guard let params = params, let callsObj = params.first as? [String: Any] else {
       return ["error": "Invalid wallet_sendCalls params"]
     }
@@ -811,6 +829,31 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         txNonce: txNonceEQ,
         needsDelegation: needsDelegation
       )
+
+      // On success path, log transaction hash (supports v1 string or v2 { id })
+      if let res = result["result"] {
+        var txHash: String? = nil
+        if let s = res as? String { txHash = s }
+        if let dict = res as? [String: Any], let id = dict["id"] as? String { txHash = id }
+        if let hashHex = txHash, !hashHex.isEmpty {
+          do {
+            let app = ActivityStore.AppMetadata(
+              domain: appMetadata.domain,
+              uri: appMetadata.uri,
+              scheme: appMetadata.scheme
+            )
+            try ActivityStore.shared.logTransaction(
+              txHash: hashHex,
+              chainIdHex: Constants.Networks.getCurrentChainIdHex(),
+              method: "wallet_sendCalls",
+              fromAddress: fromAddress,
+              app: app
+            )
+          } catch {
+            // ignore logging failure
+          }
+        }
+      }
 
       return result
 

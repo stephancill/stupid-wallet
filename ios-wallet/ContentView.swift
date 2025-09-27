@@ -89,6 +89,11 @@ struct ContentView: View {
             .toolbar {
                 if vm.hasWallet {
                     ToolbarItem(placement: .navigationBarTrailing) {
+                        NavigationLink(destination: ActivityView()) {
+                            Image(systemName: "clock")
+                        }
+                    }
+                    ToolbarItem(placement: .navigationBarTrailing) {
                         Button(action: { showSettingsSheet = true }) {
                             Image(systemName: "gear")
                         }

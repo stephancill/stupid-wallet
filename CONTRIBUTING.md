@@ -82,6 +82,10 @@ Thank you for your interest in contributing! This project is a stupid wallet app
   - `web-ui/src/index.css` and `web-ui/src/shadow.css`: Tailwind v4 styles and design tokens (inlined into shadow root).
   - Output directory is `safari/Resources/dist/` with file `content.iife.js`.
 
+### Activity Log
+
+The Activity View and SQLite-backed Activity Log (including schema, storage, and extension integration points) are specified in `docs/ActivityLog.md`.
+
 ### Prerequisites
 
 - Xcode 15+
