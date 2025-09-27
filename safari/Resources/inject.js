@@ -55,6 +55,7 @@
         }
 
         case "eth_blockNumber":
+        case "eth_getTransactionByHash":
         case "wallet_addEthereumChain":
         case "wallet_getCapabilities":
         case "eth_signTypedData_v4":

@@ -138,6 +138,9 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             return handleChainId()
         case "eth_blockNumber":
             return handleBlockNumber()
+        case "eth_getTransactionByHash":
+            let params = messageDict["params"] as? [Any]
+            return handleGetTransactionByHash(params: params)
         case "personal_sign":
             let params = messageDict["params"] as? [Any]
             return handlePersonalSign(params: params)
@@ -203,6 +206,87 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             return ["result": num.hex()]
         case .failure:
             return ["error": "Failed to get block number"]
+        }
+    }
+
+    private func handleGetTransactionByHash(params: [Any]?) -> [String: Any] {
+        guard let params = params, params.count >= 1 else {
+            return ["error": "Invalid eth_getTransactionByHash params"]
+        }
+        guard let txHashHex = params[0] as? String else {
+            return ["error": "Invalid transaction hash"]
+        }
+        
+        let (rpcURL, _) = Constants.Networks.currentNetwork()
+        let web3 = Web3(rpcURL: rpcURL)
+        
+        // Convert hex string to EthereumData
+        guard let txHashData = Data(hexString: txHashHex) else {
+            return ["error": "Invalid transaction hash format"]
+        }
+        
+        let txHash = EthereumData([UInt8](txHashData))
+        
+        switch awaitPromise(web3.eth.getTransactionByHash(blockHash: txHash)) {
+        case .success(let transaction):
+            guard let tx = transaction else {
+                return ["result": nil]
+            }
+            
+            // Format transaction response according to Ethereum JSON-RPC spec
+            var result: [String: Any] = [
+                "hash": tx.hash.hex(),
+                "nonce": tx.nonce?.hex() ?? "0x0",
+                "blockHash": tx.blockHash?.hex() ?? nil,
+                "blockNumber": tx.blockNumber?.hex() ?? nil,
+                "transactionIndex": tx.transactionIndex?.hex() ?? nil,
+                "from": tx.from?.hex(eip55: true) ?? "",
+                "to": tx.to?.hex(eip55: true) ?? nil,
+                "value": tx.value?.hex() ?? "0x0",
+                "gas": tx.gasLimit?.hex() ?? "0x0",
+                "gasPrice": tx.gasPrice?.hex() ?? "0x0",
+                "input": tx.data.hex(),
+                "v": tx.v?.hex() ?? "0x0",
+                "r": tx.r?.hex() ?? "0x0",
+                "s": tx.s?.hex() ?? "0x0"
+            ]
+            
+            // Add EIP-1559 fields if present
+            if let maxFeePerGas = tx.maxFeePerGas {
+                result["maxFeePerGas"] = maxFeePerGas.hex()
+            }
+            if let maxPriorityFeePerGas = tx.maxPriorityFeePerGas {
+                result["maxPriorityFeePerGas"] = maxPriorityFeePerGas.hex()
+            }
+            
+            // Add access list for EIP-2930 transactions
+            if !tx.accessList.isEmpty {
+                var accessList: [[String: Any]] = []
+                for (address, storageKeys) in tx.accessList {
+                    var accessItem: [String: Any] = [
+                        "address": address.hex(eip55: true),
+                        "storageKeys": storageKeys.map { $0.hex() }
+                    ]
+                    accessList.append(accessItem)
+                }
+                result["accessList"] = accessList
+            }
+            
+            // Add transaction type for EIP-2718
+            if let transactionType = tx.transactionType {
+                switch transactionType {
+                case .legacy:
+                    result["type"] = "0x0"
+                case .eip1559:
+                    result["type"] = "0x2"
+                case .eip2930:
+                    result["type"] = "0x1"
+                }
+            }
+            
+            return ["result": result]
+        case .failure(let error):
+            return ["error": "Failed to get transaction: \(error.localizedDescription)"]
         }
     }
 

@@ -13,6 +13,7 @@ export const FAST_METHODS = [
   "eth_accounts",
   "eth_chainId",
   "eth_blockNumber",
+  "eth_getTransactionByHash",
   "wallet_addEthereumChain",
   "wallet_switchEthereumChain",
   "wallet_disconnect",
