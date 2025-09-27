@@ -18,9 +18,6 @@ import Web3PromiseKit
 class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
   private let appGroupId = Constants.appGroupId
 
-  // EIP-7702 constants
-  private let simple7702AccountAddress = "0xe6Cae83BdE06E4c305530e199D7217f42808555B"
-
   struct AppMetadata {
     let domain: String?
     let uri: String?
@@ -730,7 +727,7 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         return ["error": "Failed to check account balance: \(error.localizedDescription)"]
       }
 
-      let simple7702Addr = try EthereumAddress(hex: self.simple7702AccountAddress, eip55: false)
+      let simple7702Addr = try EthereumAddress(hex: AuthorizationsUtil.simple7702AccountAddress, eip55: false)
 
       // Check if Simple7702Account is deployed on this chain
       switch awaitPromise(web3.eth.getCode(address: simple7702Addr, block: .latest)) {
@@ -742,8 +739,7 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         return ["error": "Failed to check Simple7702Account deployment"]
       }
 
-      // Parse calls and check which need authorization
-      let authorizationList: [AuthorizationsUtil.EIP7702Authorization] = []
+      // Parse calls; we'll compute whether delegation is needed and embed authorization if so
       var batchCalls: [[String: Any]] = []
 
       // Check if user's wallet needs delegation to Simple7702Account
@@ -780,11 +776,7 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         return ["error": "Failed to get nonce"]
       }
 
-      if needsDelegation {
-        // For delegation, we need to create a transaction that will be submitted
-        // The authorization will be handled by the AuthorizationsUtil.signAndSubmitAuthorization function
-        // We don't need to add to authorizationList here as it's handled separately
-      }
+      // If delegation is needed, we'll embed the authorization in the same tx
 
       // Process batch calls (no authorization needed for target contracts)
       for call in calls {
@@ -812,12 +804,12 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
       // Create executeBatch transaction
       let result = try await createExecuteBatchTransaction(
         calls: batchCalls,
-        authorizations: authorizationList,
         fromAddress: fromAddress,
         chainIdBig: chainIdBig,
         version: version,
         currentBalance: currentBalance,
-        txNonce: txNonceEQ
+        txNonce: txNonceEQ,
+        needsDelegation: needsDelegation
       )
 
       return result
@@ -1260,9 +1252,10 @@ private func awaitPromise<T>(_ promise: Promise<T>) -> Swift.Result<T, Error> {
 }
 
 private func createExecuteBatchTransaction(
-  calls: [[String: Any]], authorizations: [AuthorizationsUtil.EIP7702Authorization],
+  calls: [[String: Any]],
   fromAddress: String, chainIdBig: BigUInt, version: Int, currentBalance: BigUInt,
-  txNonce: EthereumQuantity
+  txNonce: EthereumQuantity,
+  needsDelegation: Bool
 ) async throws -> [String: Any] {
   let (rpcURL, _) = Constants.Networks.currentNetwork()
   let web3 = Web3(rpcURL: rpcURL)
@@ -1346,12 +1339,17 @@ private func createExecuteBatchTransaction(
 
   // Get EIP-1559 fee data
   let maxFeePerGas: EthereumQuantity
+  let maxPriorityFeePerGasQty: BigUInt
 
   // Get gas price (simplified - using legacy gas price for now)
   switch awaitPromise(web3.eth.gasPrice()) {
   case .success(let gp):
     // Use EIP-1559 style fees if available; otherwise default to legacy gasPrice
     maxFeePerGas = gp
+    // Derive a reasonable priority fee (min(gp/2, 2 gwei))
+    let twoGwei = BigUInt(2_000_000_000)
+    let half = gp.quantity / 2
+    maxPriorityFeePerGasQty = half < twoGwei ? half : twoGwei
   case .failure(let err):
     throw NSError(
       domain: "Transaction", code: 2,
@@ -1377,8 +1375,8 @@ private func createExecuteBatchTransaction(
   }
 
   // Add intrinsic overhead for EIP-7702 (base tx cost + per-authorization cost)
-  if !authorizations.isEmpty {
-    let authOverhead = BigUInt(25_000 * authorizations.count)
+  if needsDelegation {
+    let authOverhead = BigUInt(25_000) // single authorization
     let baseOverhead = BigUInt(21_000)
     let safetyMargin = BigUInt(50_000)
     let newLimit = gasLimit.quantity + authOverhead + baseOverhead + safetyMargin
@@ -1405,12 +1403,17 @@ private func createExecuteBatchTransaction(
   }
 
   // Check if we need EIP-7702 transaction format
-  if !authorizations.isEmpty {
-    // Use AuthorizationsUtil to sign and submit the authorization transaction
-    let txHash = try await AuthorizationsUtil.signAndSubmitAuthorization(
+  if needsDelegation {
+    // Submit a single 0x04 tx embedding the authorization and the calldata
+    let txHash = try await AuthorizationsUtil.signAndSubmitAuthorizationWithCalldata(
       fromAddress: fromAddress,
-      contractAddress: "0xe6Cae83BdE06E4c305530e199D7217f42808555B",
-      chainId: chainIdBig
+      contractAddress: AuthorizationsUtil.simple7702AccountAddress,
+      chainId: chainIdBig,
+      txNonce: txNonce.quantity,
+      gasLimit: gasLimit.quantity,
+      maxFeePerGas: maxFeePerGas.quantity,
+      maxPriorityFeePerGas: maxPriorityFeePerGasQty,
+      data: data
     )
 
     if version == 2 {

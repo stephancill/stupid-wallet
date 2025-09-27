@@ -175,11 +175,11 @@ struct AuthorizationsListView: View {
                             Text("Accounts are delegated to:")
                                 .font(.body)
 
-                            Text("0xe6Cae83BdE06E4c305530e199D7217f42808555B")
+                            Text(AuthorizationsUtil.simple7702AccountAddress)
                                 .font(.system(.body, design: .monospaced))
 
                             Button(action: {
-                                if let url = URL(string: "https://basescan.org/address/0xe6Cae83BdE06E4c305530e199D7217f42808555B#code") {
+                                if let url = URL(string: "https://basescan.org/address/\(AuthorizationsUtil.simple7702AccountAddress)#code") {
                                     UIApplication.shared.open(url)
                                 }
                             }) {

@@ -16,7 +16,7 @@ import CryptoSwift
 
 enum AuthorizationsUtil {
     // EIP-7702 constants
-    private static let simple7702AccountAddress = "0xe6Cae83BdE06E4c305530e199D7217f42808555B"
+    static let simple7702AccountAddress = "0xe6Cae83BdE06E4c305530e199D7217f42808555B"
 
     // EIP-7702 Authorization structure
     struct EIP7702Authorization {
@@ -215,6 +215,56 @@ enum AuthorizationsUtil {
         let rawTxHex = "0x" + rawTx.hex()
         let url = URL(string: rpcURL)!
 
+        return try await submitEIP7702Transaction(rpcURL: url, rawTxHex: rawTxHex)
+    }
+
+    /// Sign and submit a full EIP-7702 transaction that includes calldata to execute,
+    /// embedding the authorization in the same transaction (type 0x04).
+    /// - Parameters:
+    ///   - fromAddress: Externally owned account address
+    ///   - contractAddress: The contract to delegate to (e.g. Simple7702Account)
+    ///   - chainId: Chain ID
+    ///   - txNonce: The outer transaction nonce
+    ///   - gasLimit: Gas limit for the outer transaction
+    ///   - maxFeePerGas: Max fee per gas (EIP-1559 style or legacy-equivalent)
+    ///   - maxPriorityFeePerGas: Max priority fee per gas (tip)
+    ///   - data: Calldata to execute in the delegated context (e.g. executeBatch selector+args)
+    /// - Returns: Transaction hash as hex string
+    static func signAndSubmitAuthorizationWithCalldata(
+        fromAddress: String,
+        contractAddress: String,
+        chainId: BigUInt,
+        txNonce: BigUInt,
+        gasLimit: BigUInt,
+        maxFeePerGas: BigUInt,
+        maxPriorityFeePerGas: BigUInt,
+        data: Data
+    ) async throws -> String {
+        // Per EIP-7702: when the tx is submitted by the same account, the authorization nonce
+        // should be incremented by 1 relative to the outer tx nonce.
+        let authorization = try signEIP7702Authorization(
+            contractAddress: contractAddress,
+            chainId: chainId,
+            fromAddress: fromAddress,
+            txNonce: txNonce + 1
+        )
+
+        let rawTx = try serializeEIP7702Transaction(
+            nonce: EthereumQuantity(quantity: txNonce),
+            maxPriorityFeePerGas: EthereumQuantity(quantity: maxPriorityFeePerGas),
+            maxFeePerGas: EthereumQuantity(quantity: maxFeePerGas),
+            gasLimit: EthereumQuantity(quantity: gasLimit),
+            to: fromAddress, // Self-transaction
+            value: EthereumQuantity(quantity: BigUInt.zero),
+            data: data,
+            accessList: [],
+            authorizations: [authorization],
+            chainId: chainId,
+            fromAddress: fromAddress
+        )
+
+        let rawTxHex = "0x" + rawTx.hex()
+        let url = URL(string: Constants.Networks.rpcURL(forChainId: chainId))!
         return try await submitEIP7702Transaction(rpcURL: url, rawTxHex: rawTxHex)
     }
 
