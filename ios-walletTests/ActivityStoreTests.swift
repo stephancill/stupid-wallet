@@ -9,6 +9,11 @@ import Testing
 struct ActivityStoreTests {
     @Test("ActivityStore opens DB, upserts app, inserts txs, and fetches in reverse order")
     func testInsertAndFetchOrdering() async throws {
+        // Use a temporary database file isolated from the App Group to avoid
+        // modifying the app's real Activity.sqlite during tests.
+        let tmpDir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        let dbURL = tmpDir.appendingPathComponent("Activity-Test-\(UUID().uuidString).sqlite")
+        ActivityStore.setDatabaseURLOverride(dbURL)
         let store = ActivityStore.shared
 
         // Use a unique app metadata to avoid collisions with existing data

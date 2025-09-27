@@ -210,6 +210,25 @@ Phase 2 — Extension integration (logging)
 - Graceful failure: logging errors must not affect RPC responses.
 - Acceptance: Manual test by sending a tx; verify row appears in DB with correct app metadata.
 
+Implementation Notes (Phase 2)
+
+- Files: `safari/SafariWebExtensionHandler.swift`
+- Data flow: Thread `appMetadata` from `beginRequest` → `handleWalletRequest` into the concrete handlers.
+- Logging points (best‑effort; failures do not affect RPC results):
+  - `eth_sendTransaction`: After `web3.eth.sendRawTransaction` succeeds, call `ActivityStore.shared.logTransaction(txHash, chainIdHex: Constants.Networks.getCurrentChainIdHex(), method: "eth_sendTransaction", fromAddress: getSavedAddress(), app: appMetadata)`.
+  - `wallet_sendCalls`: On success, extract tx hash from result:
+    - v1: result is the tx hash string
+    - v2: result is an object `{ id: <txHash> }`
+      Then call `logTransaction(..., method: "wallet_sendCalls", fromAddress: fromAddress)`.
+- `chainIdHex`: `Constants.Networks.getCurrentChainIdHex()`; `fromAddress`: `getSavedAddress()` (or `fromAddress` for sendCalls path).
+- If `appMetadata` values are missing, `ActivityStore` upserts a row with `NULL` domain/uri/scheme and de‑duplicates via the `UNIQUE` constraint.
+- Inspecting the DB on macOS (Safari on Mac):
+
+```bash
+sqlite3 "$HOME/Library/Group Containers/group.co.za.stephancill.stupid-wallet/Activity.sqlite" \
+"SELECT t.tx_hash, a.domain, a.uri, a.scheme, t.chain_id_hex, t.method, t.from_address, datetime(t.created_at,'unixepoch') AS created_at, t.status FROM transactions t LEFT JOIN apps a ON a.id=t.app_id ORDER BY t.created_at DESC, t.id DESC LIMIT 50;"
+```
+
 Phase 3 — Activity UI and navigation
 
 - Add `ios-wallet/ActivityViewModel.swift` with `@Published var items` and loading via `ActivityStore.fetchTransactions(...)`.

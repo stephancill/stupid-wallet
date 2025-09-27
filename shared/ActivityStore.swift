@@ -12,6 +12,13 @@ import SQLite3
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 public final class ActivityStore {
+    // Optional override for database URL (used by tests)
+    private static var dbURLOverride: URL? = nil
+
+    // Allow tests to override the database location before first access to `shared`
+    public static func setDatabaseURLOverride(_ url: URL?) {
+        ActivityStore.dbURLOverride = url
+    }
     public struct AppMetadata {
         public let domain: String?
         public let uri: String?
@@ -144,10 +151,18 @@ public final class ActivityStore {
     private func openIfNeeded() throws {
         if db != nil { return }
 
-        guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: Constants.appGroupId) else {
-            throw ActivityStoreError.containerUnavailable
+        // Resolve database URL (test override > env var > App Group container)
+        let dbURL: URL
+        if let override = ActivityStore.dbURLOverride {
+            dbURL = override
+        } else if let envPath = ProcessInfo.processInfo.environment["STUPID_WALLET_ACTIVITY_DB"], !envPath.isEmpty {
+            dbURL = URL(fileURLWithPath: envPath)
+        } else {
+            guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: Constants.appGroupId) else {
+                throw ActivityStoreError.containerUnavailable
+            }
+            dbURL = containerURL.appendingPathComponent("Activity.sqlite")
         }
-        let dbURL = containerURL.appendingPathComponent("Activity.sqlite")
 
         var handle: OpaquePointer?
         if sqlite3_open(dbURL.path, &handle) != SQLITE_OK {
