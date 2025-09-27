@@ -315,6 +315,41 @@ Phase 5 — Robustness and UX
 - Migration scaffolding for future schema changes.
 - Acceptance: Smooth scrolling, stable memory usage with large histories.
 
+Implementation Notes (Phase 5)
+
+- Files:
+
+  - `ios-wallet/ActivityViewModel.swift`
+    - Adds pagination state: `pageSize = 50`, `isLoadingMore`, `errorMessage`, and internal `canLoadMore` guard.
+    - New APIs:
+      - `loadInitial()` clears state and fetches the first page.
+      - `loadMoreIfNeeded(currentItem:)` triggers fetching next page when user nears the end.
+      - Private `fetchNextPage()` performs an offset query and appends results.
+    - `loadLatest(limit:offset:)` updated to set `canLoadMore` based on page size and to clear `errorMessage` on new loads.
+  - `ios-wallet/ActivityView.swift`
+    - Incremental loading: calls `vm.loadMoreIfNeeded(currentItem:)` in each row's `.onAppear`.
+    - Bottom loader: shows a small `ProgressView` using `.safeAreaInset(edge: .bottom)` while `vm.isLoadingMore` is true.
+    - Error banner: lightweight top overlay displaying `vm.errorMessage` when pagination fails.
+    - Pull-to-refresh now calls `vm.loadInitial()` to reload from the first page.
+  - `ios-wallet/ActivityDetailView.swift`
+    - Explorer fallback: if opening Blockscan fails, falls back to opening an Etherscan URL for the same hash.
+  - `shared/ActivityStore.swift`
+    - Migration scaffolding via `PRAGMA user_version`:
+      - On first open for a fresh DB (`user_version == 0`), sets `user_version = 1`.
+      - Future schema changes should bump `user_version` and add conditional migration steps here.
+
+- UX details:
+
+  - Page size is 50; `canLoadMore` disables further fetches when a page returns fewer than 50 rows.
+  - Empty state remains a centered tray icon + caption when there are no items and not loading.
+  - Error conditions during pagination are non-fatal; an inline banner appears and subsequent scrolls can retry.
+
+- Acceptance:
+  - Scrolling to the end loads additional pages until history is exhausted without stutter.
+  - Error banner appears on transient failures and disappears on subsequent successful load.
+  - "Open in Explorer" works; if Blockscan cannot open, Etherscan fallback opens instead.
+  - Fresh databases report `PRAGMA user_version = 1` post-open.
+
 Phase 6 — Tests and CI
 
 - Unit tests for `ActivityStore` (schema creation, upsert/insert/fetch ordering, status update).

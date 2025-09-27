@@ -20,9 +20,16 @@ struct ActivityDetailView: View {
     }
 
     private func openExplorer() {
-        let urlString = "https://blockscan.com/tx/\(item.txHash)"
-        if let url = URL(string: urlString) {
-            UIApplication.shared.open(url)
+        let preferred = URL(string: "https://blockscan.com/tx/\(item.txHash)")
+        if let url = preferred {
+            UIApplication.shared.open(url, options: [:]) { success in
+                if !success {
+                    // Fallback to a more universal explorer (etherscan mainnet); still a useful link
+                    if let fallback = URL(string: "https://etherscan.io/tx/\(item.txHash)") {
+                        UIApplication.shared.open(fallback)
+                    }
+                }
+            }
         }
     }
 

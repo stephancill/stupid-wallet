@@ -5,13 +5,17 @@ import BigInt
 final class ActivityViewModel: ObservableObject {
     @Published var items: [ActivityStore.ActivityItem] = []
     @Published var isLoading: Bool = false
+    @Published var isLoadingMore: Bool = false
+    @Published var errorMessage: String? = nil
 
     private var pollTask: Task<Void, Never>? = nil
     private let maxConcurrentChecks = 5
     private let pageSize = 50
+    private var canLoadMore: Bool = true
 
     func loadLatest(limit: Int? = nil, offset: Int = 0) {
         isLoading = true
+        errorMessage = nil
         let l = limit ?? pageSize
         DispatchQueue.global(qos: .userInitiated).async {
             let result: [ActivityStore.ActivityItem]
@@ -23,6 +27,46 @@ final class ActivityViewModel: ObservableObject {
             DispatchQueue.main.async {
                 self.items = result
                 self.isLoading = false
+                self.canLoadMore = result.count == l
+            }
+        }
+    }
+
+    func loadInitial() {
+        items = []
+        canLoadMore = true
+        loadLatest(limit: pageSize, offset: 0)
+    }
+
+    func loadMoreIfNeeded(currentItem item: ActivityStore.ActivityItem?) {
+        guard let item = item else { return }
+        guard canLoadMore, !isLoading, !isLoadingMore else { return }
+        let thresholdIndex = items.index(items.endIndex, offsetBy: -5, limitedBy: items.startIndex) ?? items.startIndex
+        // If the current item is within the last few, trigger load more
+        if let idx = items.firstIndex(where: { $0.txHash == item.txHash }), idx >= thresholdIndex {
+            fetchNextPage()
+        }
+    }
+
+    private func fetchNextPage() {
+        guard canLoadMore, !isLoadingMore else { return }
+        isLoadingMore = true
+        errorMessage = nil
+        let offset = items.count
+        let l = pageSize
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let result = try ActivityStore.shared.fetchTransactions(limit: l, offset: offset)
+                DispatchQueue.main.async {
+                    self.items.append(contentsOf: result)
+                    self.canLoadMore = result.count == l
+                    self.isLoadingMore = false
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.errorMessage = "Failed to load more activity."
+                    self.isLoadingMore = false
+                }
             }
         }
     }

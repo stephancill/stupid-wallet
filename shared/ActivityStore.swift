@@ -201,6 +201,11 @@ public final class ActivityStore {
     }
 
     private func createSchemaIfNeeded() throws {
+        // Migration scaffolding: use PRAGMA user_version to coordinate schema changes.
+        // v1: initial schema
+        // Future: bump user_version and add migrations here.
+        _ = exec("PRAGMA user_version;")
+
         let createApps = """
         CREATE TABLE IF NOT EXISTS apps (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -227,6 +232,18 @@ public final class ActivityStore {
         """
         guard exec(createApps), exec(createTx) else {
             throw ActivityStoreError.schemaCreationFailed
+        }
+
+        // Set user_version to 1 if it's currently 0 (fresh DB)
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, "PRAGMA user_version;", -1, &stmt, nil) == SQLITE_OK {
+            defer { sqlite3_finalize(stmt) }
+            if sqlite3_step(stmt) == SQLITE_ROW {
+                let version = sqlite3_column_int(stmt, 0)
+                if version == 0 {
+                    _ = exec("PRAGMA user_version = 1;")
+                }
+            }
         }
     }
 

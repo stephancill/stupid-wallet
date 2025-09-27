@@ -47,22 +47,25 @@ struct ActivityView: View {
                             .lineLimit(1)
                             .truncationMode(.tail)
                         HStack(spacing: 6) {
-                            Text(truncatedHash(item.txHash))
-                                .font(.system(.body, design: .monospaced))
-                            Text("•")
-                            Text(chainName(from: item.chainIdHex))
                             if item.status == "pending" {
-                                Text("•")
                                 ProgressView()
                                     .controlSize(.small)
                                     .scaleEffect(0.7)
                                 Text("Pending")
-                            } else if item.status != "confirmed" {
                                 Text("•")
+                                Text(chainName(from: item.chainIdHex))
+                            } else if item.status != "confirmed" {
                                 Image(systemName: "exclamationmark.triangle.fill")
                                     .foregroundColor(.red)
                                     .imageScale(.small)
                                 Text("Failed")
+                                Text("•")
+                                Text(chainName(from: item.chainIdHex))
+                            } else {
+                                Text(truncatedHash(item.txHash))
+                                    .font(.system(.body, design: .monospaced))
+                                Text("•")
+                                Text(chainName(from: item.chainIdHex))
                             }
                         }
                         .foregroundColor(.secondary)
@@ -76,6 +79,7 @@ struct ActivityView: View {
                 }
                 .padding(.vertical, 4)
             }
+            .onAppear { vm.loadMoreIfNeeded(currentItem: item) }
         }
         .overlay(alignment: .center) {
             if vm.isLoading {
@@ -90,11 +94,35 @@ struct ActivityView: View {
                 }
             }
         }
+        .overlay(alignment: .top) {
+            if let error = vm.errorMessage {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.yellow)
+                    Text(error)
+                        .foregroundColor(.primary)
+                }
+                .padding(8)
+                .background(.ultraThinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .padding(.top, 8)
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if vm.isLoadingMore {
+                HStack {
+                    Spacer()
+                    ProgressView().scaleEffect(0.9)
+                    Spacer()
+                }
+                .padding(.vertical, 8)
+            }
+        }
         .navigationTitle("Activity")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { vm.loadLatest(); vm.startPolling() }
+        .onAppear { vm.loadInitial(); vm.startPolling() }
         .onDisappear { vm.stopPolling() }
-        .refreshable { vm.loadLatest() }
+        .refreshable { vm.loadInitial() }
     }
 }
 
