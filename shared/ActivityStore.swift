@@ -264,17 +264,24 @@ public final class ActivityStore {
             throw ActivityStoreError.sqlite(message: lastErrorMessage())
         }
 
-        let selectSQL = "SELECT id FROM apps WHERE (domain IS ? OR domain = ?) AND (uri IS ? OR uri = ?) AND (scheme IS ? OR scheme = ?) LIMIT 1;"
+        let selectSQL = """
+        SELECT id FROM apps
+        WHERE ((? IS NULL AND domain IS NULL) OR (? IS NOT NULL AND domain = ?))
+          AND ((? IS NULL AND uri IS NULL) OR (? IS NOT NULL AND uri = ?))
+          AND ((? IS NULL AND scheme IS NULL) OR (? IS NOT NULL AND scheme = ?))
+        LIMIT 1;
+        """
         var selectStmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, selectSQL, -1, &selectStmt, nil) == SQLITE_OK else {
             throw ActivityStoreError.sqlite(message: lastErrorMessage())
         }
         defer { sqlite3_finalize(selectStmt) }
 
-        // Bind both NULL and value to handle UNIQUE(NULL,NULL,NULL) cases consistently
-        bindNullOrTextPair(selectStmt, 1, 2, domain)
-        bindNullOrTextPair(selectStmt, 3, 4, uri)
-        bindNullOrTextPair(selectStmt, 5, 6, scheme)
+        // Bind triplets per column so the predicate compares NULLs and non-NULLs correctly.
+        // Empty strings are treated as NULL for consistency with inserts.
+        bindNullAwareTriplet(selectStmt, 1, 2, 3, domain)
+        bindNullAwareTriplet(selectStmt, 4, 5, 6, uri)
+        bindNullAwareTriplet(selectStmt, 7, 8, 9, scheme)
 
         guard sqlite3_step(selectStmt) == SQLITE_ROW else {
             throw ActivityStoreError.sqlite(message: "Failed to fetch app id")
@@ -312,6 +319,18 @@ public final class ActivityStore {
         } else {
             sqlite3_bind_null(stmt, nullIndex)
             sqlite3_bind_null(stmt, valueIndex)
+        }
+    }
+
+    private func bindNullAwareTriplet(_ stmt: OpaquePointer?, _ i1: Int32, _ i2: Int32, _ i3: Int32, _ value: String?) {
+        if let v = value, !v.isEmpty {
+            sqlite3_bind_text(stmt, i1, (v as NSString).utf8String, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, i2, (v as NSString).utf8String, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, i3, (v as NSString).utf8String, -1, SQLITE_TRANSIENT)
+        } else {
+            sqlite3_bind_null(stmt, i1)
+            sqlite3_bind_null(stmt, i2)
+            sqlite3_bind_null(stmt, i3)
         }
     }
 
