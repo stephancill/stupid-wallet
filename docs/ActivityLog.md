@@ -241,6 +241,32 @@ Phase 3 — Activity UI and navigation
   - Add a `NavigationLink` with `Image(systemName: "clock")` to open Activity.
 - Acceptance: Navigate from the top-right button; see logged entries and open detail.
 
+Implementation Notes (Phase 3)
+
+- Files:
+  - `ios-wallet/ActivityViewModel.swift`
+    - `@Published var items: [ActivityItem]`
+    - `loadLatest(limit:offset:)` fetches from `ActivityStore.shared.fetchTransactions(...)` on a background queue and publishes on main.
+  - `ios-wallet/ActivityView.swift`
+    - Reverse-chronological `List` of activity items.
+    - Row layout:
+      - First line: app label — prefers `domain`, else `uri`, else `scheme`, else “Unknown App”.
+      - Second line: `{truncated hash} • {Chain name}`
+        - Only the hash is monospaced; chain name uses normal font.
+      - Trailing on the right: time ago (RelativeDateTimeFormatter), vertically centered, normal text size.
+    - Pull-to-refresh calls `loadLatest()`.
+  - `ios-wallet/ActivityDetailView.swift`
+    - Sections: Transaction, Status, Network, Timestamp, and an Explorer link button.
+    - Transaction row is tappable to copy the hash to clipboard and shows a trailing icon that switches from `doc.on.doc` to `checkmark` briefly after copying. Hash text is monospaced and truncates in the middle.
+    - Explorer button label reads “Open in Explorer” and opens Blockscan: `https://blockscan.com/tx/<hash>`.
+- Navigation:
+  - `ios-wallet/ContentView.swift` toolbar includes a `NavigationLink` with system image `"clock"` to open `ActivityView` (alongside the Settings gear).
+- Data model updates:
+  - `ActivityStore.ActivityItem` now includes `status: String`.
+  - `ActivityStore.fetchTransactions` selects `t.status` and populates the field; `ActivityDetailView` renders the value (capitalized) in the Status section.
+- Out of scope for Phase 3:
+  - Status polling remains in Phase 4; the UI currently reflects the persisted status without background updates.
+
 Phase 4 — Status polling for pending transactions
 
 - In `ActivityViewModel`, implement a lightweight poller:

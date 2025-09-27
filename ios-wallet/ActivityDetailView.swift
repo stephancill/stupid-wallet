@@ -1,0 +1,80 @@
+//
+//  ActivityDetailView.swift
+//  ios-wallet
+//
+//  Phase 3: Activity detail screen with explorer link
+//
+
+import SwiftUI
+import BigInt
+import UIKit
+
+struct ActivityDetailView: View {
+    let item: ActivityStore.ActivityItem
+    @State private var didCopyHash: Bool = false
+
+    private func chainName(from hex: String) -> String {
+        let clean = hex.hasPrefix("0x") ? String(hex.dropFirst(2)) : hex
+        let id = BigUInt(clean, radix: 16) ?? BigUInt(1)
+        return Constants.Networks.chainName(forChainId: id)
+    }
+
+    private func openExplorer() {
+        let urlString = "https://blockscan.com/tx/\(item.txHash)"
+        if let url = URL(string: urlString) {
+            UIApplication.shared.open(url)
+        }
+    }
+
+    var body: some View {
+        Form {
+            Section("Transaction") {
+                Button(action: {
+                    UIPasteboard.general.string = item.txHash
+                    didCopyHash = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                        didCopyHash = false
+                    }
+                }) {
+                    HStack {
+                        Text(item.txHash)
+                            .font(.system(.body, design: .monospaced))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                        Image(systemName: didCopyHash ? "checkmark" : "doc.on.doc")
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            Section("Status") {
+                Text(item.status.capitalized)
+            }
+            Section("Network") {
+                Text(chainName(from: item.chainIdHex))
+            }
+            Section("Timestamp") {
+                Text(item.createdAt.formatted(date: .abbreviated, time: .shortened))
+            }
+            Section {
+                Button(action: { openExplorer() }) {
+                    HStack {
+                        Spacer()
+                        Text("Open in Explorer")
+                        Spacer()
+                    }
+                }
+            }
+        }
+        .navigationTitle("Details")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+#Preview {
+    let app = ActivityStore.AppMetadata(domain: "app.example", uri: nil, scheme: nil)
+    let item = ActivityStore.ActivityItem(txHash: "0x1234567890abcdef", app: app, chainIdHex: "0x1", method: "eth_sendTransaction", fromAddress: nil, createdAt: Date(), status: "pending")
+    return NavigationView { ActivityDetailView(item: item) }
+}
+
+

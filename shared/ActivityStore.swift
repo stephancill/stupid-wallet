@@ -37,6 +37,7 @@ public final class ActivityStore {
         public let method: String?
         public let fromAddress: String?
         public let createdAt: Date
+        public let status: String
     }
 
     public static let shared = ActivityStore()
@@ -106,7 +107,8 @@ public final class ActivityStore {
 
             let sql = """
             SELECT t.tx_hash, t.chain_id_hex, t.method, t.from_address, t.created_at,
-                   a.domain, a.uri, a.scheme
+                   a.domain, a.uri, a.scheme,
+                   t.status
               FROM transactions t
               LEFT JOIN apps a ON a.id = t.app_id
              ORDER BY t.created_at DESC, t.id DESC
@@ -132,13 +134,15 @@ public final class ActivityStore {
                 let uri = stringColumn(stmt, index: 6)
                 let scheme = stringColumn(stmt, index: 7)
                 let app = AppMetadata(domain: domain, uri: uri, scheme: scheme)
+                let status = stringColumn(stmt, index: 8) ?? "pending"
                 let item = ActivityItem(
                     txHash: txHash,
                     app: app,
                     chainIdHex: chainIdHex,
                     method: method,
                     fromAddress: fromAddress,
-                    createdAt: Date(timeIntervalSince1970: TimeInterval(createdAtEpoch))
+                    createdAt: Date(timeIntervalSince1970: TimeInterval(createdAtEpoch)),
+                    status: status
                 )
                 items.append(item)
             }
