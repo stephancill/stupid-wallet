@@ -218,25 +218,56 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         }
         
         let (rpcURL, _) = Constants.Networks.currentNetwork()
-        let web3 = Web3(rpcURL: rpcURL)
         
-        // Convert hex string to EthereumData
-        guard let txHashData = Data(hexString: txHashHex) else {
-            return ["error": "Invalid transaction hash format"]
+        // Make direct HTTP request to RPC endpoint
+        return await makeRPCRequest(url: rpcURL, method: "eth_getTransactionByHash", params: [txHashHex])
+    }
+    
+    private func makeRPCRequest(url: String, method: String, params: [Any]) async -> [String: Any] {
+        guard let rpcURL = URL(string: url) else {
+            return ["error": "Invalid RPC URL"]
         }
         
-        let txHash = EthereumData([UInt8](txHashData))
+        // Create JSON-RPC request payload
+        let requestPayload: [String: Any] = [
+            "jsonrpc": "2.0",
+            "method": method,
+            "params": params,
+            "id": 1
+        ]
         
-        switch awaitPromise(web3.eth.getTransactionByHash(blockHash: txHash)) {
-        case .success(let transaction):
-            // Return the raw RPC response directly
-            if let tx = transaction {
-                return ["result": tx]
-            } else {
-                return ["result": nil]
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: requestPayload) else {
+            return ["error": "Failed to serialize request"]
+        }
+        
+        var request = URLRequest(url: rpcURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200 else {
+                return ["error": "RPC request failed"]
             }
-        case .failure(let error):
-            return ["error": "Failed to get transaction: \(error.localizedDescription)"]
+            
+            guard let jsonResponse = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return ["error": "Invalid JSON response"]
+            }
+            
+            // Check for RPC error
+            if let error = jsonResponse["error"] as? [String: Any] {
+                let errorMessage = error["message"] as? String ?? "Unknown RPC error"
+                return ["error": errorMessage]
+            }
+            
+            // Return the result directly from RPC response
+            return ["result": jsonResponse["result"] ?? nil]
+            
+        } catch {
+            return ["error": "Network request failed: \(error.localizedDescription)"]
         }
     }
 
