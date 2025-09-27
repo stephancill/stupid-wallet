@@ -138,6 +138,9 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             return handleChainId()
         case "eth_blockNumber":
             return handleBlockNumber()
+        case "eth_getTransactionByHash":
+            let params = messageDict["params"] as? [Any]
+            return await handleGetTransactionByHash(params: params)
         case "personal_sign":
             let params = messageDict["params"] as? [Any]
             return handlePersonalSign(params: params)
@@ -203,6 +206,29 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             return ["result": num.hex()]
         case .failure:
             return ["error": "Failed to get block number"]
+        }
+    }
+
+    private func handleGetTransactionByHash(params: [Any]?) async -> [String: Any] {
+        guard let params = params, let hash = params.first as? String, !hash.isEmpty else {
+            return ["error": "Invalid eth_getTransactionByHash params"]
+        }
+        let (rpcURL, _) = Constants.Networks.currentNetwork()
+        guard let url = URL(string: rpcURL) else {
+            return ["error": "Invalid RPC URL"]
+        }
+        do {
+            // Use shared JSONRPC utility to query node directly, preserve null when not found
+            let result: Any? = try await JSONRPC.request(rpcURL: url, method: "eth_getTransactionByHash", params: [hash])
+            if let dict = result as? [String: Any] {
+                return ["result": dict]
+            } else if result == nil {
+                return ["result": NSNull()] // EIP-1193/JSON-RPC returns null when not found
+            } else {
+                return ["error": "Unexpected response type for eth_getTransactionByHash"]
+            }
+        } catch {
+            return ["error": error.localizedDescription]
         }
     }
 
