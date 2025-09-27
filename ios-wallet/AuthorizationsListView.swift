@@ -236,15 +236,7 @@ struct AuthorizationsListView: View {
     private func loadAuthorizations() async {
         isLoading = true
         errorMessage = nil
-        let startTime = Date()
-
-        do {
-            authorizationStatuses = try await AuthorizationsUtil.checkAllAuthorizations(for: address)
-        } catch is CancellationError {
-            // User cancelled the operation - don't show error
-        } catch {
-            errorMessage = error.localizedDescription
-        }
+        authorizationStatuses = await AuthorizationsUtil.checkAllAuthorizations(for: address)
 
         // Ensure loading state is properly updated on the main thread
         await MainActor.run {
