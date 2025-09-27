@@ -150,6 +150,26 @@ public final class ActivityStore {
         }
     }
 
+    public func updateTransactionStatus(txHash: String, status: String) throws {
+        try queue.sync {
+            try openIfNeeded()
+
+            let sql = "UPDATE transactions SET status = ? WHERE tx_hash = ?;"
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                throw ActivityStoreError.sqlite(message: lastErrorMessage())
+            }
+            defer { sqlite3_finalize(stmt) }
+
+            sqlite3_bind_text(stmt, 1, (status as NSString).utf8String, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 2, (txHash as NSString).utf8String, -1, SQLITE_TRANSIENT)
+
+            guard sqlite3_step(stmt) == SQLITE_DONE else {
+                throw ActivityStoreError.sqlite(message: lastErrorMessage())
+            }
+        }
+    }
+
     // MARK: - Private helpers
 
     private func openIfNeeded() throws {

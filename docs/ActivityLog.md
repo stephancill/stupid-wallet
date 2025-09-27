@@ -278,6 +278,35 @@ Phase 4 — Status polling for pending transactions
 - Bound concurrency (e.g., max 5 in-flight checks) to protect RPC.
 - Acceptance: A newly logged tx transitions from pending to confirmed/failed when mined.
 
+Implementation Notes (Phase 4)
+
+- Files:
+  - `ios-wallet/ActivityViewModel.swift`
+  - `shared/ActivityStore.swift`
+  - `shared/JSONRPC.swift`
+- Poller behavior:
+  - Runs only while `ActivityView` is visible; starts on `.onAppear` and stops on `.onDisappear`.
+  - Cadence/backoff: every 5s for the first 60s, then every 15s up to 10 minutes, then every 30s thereafter.
+  - Bounded concurrency using a lightweight async semaphore (max 5 in-flight receipt checks).
+  - Snapshot items on each iteration; query only those with `status = "pending"`.
+- RPC selection:
+  - For each item, derive chain id from `chainIdHex` and select RPC via `Constants.Networks.rpcURL(forChainId:)`.
+  - Issue `eth_getTransactionReceipt` requests using `JSONRPC.request(rpcURL:method:params:timeout:)`.
+- Status mapping (aligns with extension `wallet_getCallsStatus`):
+  - No receipt → keep `pending`.
+  - Receipt with `status == 1` → `confirmed`.
+  - Receipt with `status == 0` → `failed`.
+  - Transient errors (network/timeouts) do not flip status; remain `pending`.
+- Persistence + UI updates:
+  - Persist transitions using `ActivityStore.updateTransactionStatus(txHash:status:)`.
+  - Immediately update the in-memory item to reflect new status in the list.
+- UI indicators in `ActivityView` rows:
+  - While `pending`: show a small inline spinner and "Pending" label after the chain name.
+  - When not `pending` and not `confirmed`: show a red warning icon and "Failed" label.
+  - `confirmed` shows no extra indicator beyond the timestamp and chain name.
+  - Detail screen reflects the current persisted status in the "Status" section.
+- Reliability: best-effort; polling should never crash the UI or block user interaction. Errors are swallowed and retried on the next tick.
+
 Phase 5 — Robustness and UX
 
 - Pagination or incremental loading in the list (e.g., page size 50, load more on scroll).

@@ -831,7 +831,7 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
       )
 
       // On success path, log transaction hash (supports v1 string or v2 { id })
-      if let res = result["result"] as? Any {
+      if let res = result["result"] {
         var txHash: String? = nil
         if let s = res as? String { txHash = s }
         if let dict = res as? [String: Any], let id = dict["id"] as? String { txHash = id }

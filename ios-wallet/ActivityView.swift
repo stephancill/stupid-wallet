@@ -46,12 +46,25 @@ struct ActivityView: View {
                         Text(appLabel(item.app))
                             .lineLimit(1)
                             .truncationMode(.tail)
-                        (
+                        HStack(spacing: 6) {
                             Text(truncatedHash(item.txHash))
                                 .font(.system(.body, design: .monospaced))
-                            + Text(" • ")
-                            + Text(chainName(from: item.chainIdHex))
-                        )
+                            Text("•")
+                            Text(chainName(from: item.chainIdHex))
+                            if item.status == "pending" {
+                                Text("•")
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .scaleEffect(0.7)
+                                Text("Pending")
+                            } else if item.status != "confirmed" {
+                                Text("•")
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.red)
+                                    .imageScale(.small)
+                                Text("Failed")
+                            }
+                        }
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -79,7 +92,8 @@ struct ActivityView: View {
         }
         .navigationTitle("Activity")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { vm.loadLatest() }
+        .onAppear { vm.loadLatest(); vm.startPolling() }
+        .onDisappear { vm.stopPolling() }
         .refreshable { vm.loadLatest() }
     }
 }
