@@ -32,8 +32,6 @@
 
     // EIP-1193 request method
     async request({ method, params = [] }) {
-      console.log(`EIP-1193 request: ${method}`, params);
-
       switch (method) {
         case "eth_requestAccounts":
         case "wallet_connect":
@@ -101,9 +99,6 @@
 
           const response = event.data.response;
 
-          // Neutral log for connect responses
-          console.log("connect response", response);
-
           // Ignore interim pending responses if any (content doesn't forward them)
           if (response && response.pending) {
             return;
@@ -113,9 +108,6 @@
           window.removeEventListener("message", responseHandler);
 
           if (response.error) {
-            if (response.error === "User rejected the request") {
-              console.log("User rejected the connection request");
-            }
             reject(this._toError(response.error));
             return;
           }
@@ -457,7 +449,6 @@
 
         this.request({ method: payload.method, params: payload.params || [] })
           .then((result) => {
-            console.log("send callback", result);
             return callback(null, { id: payload.id, jsonrpc: "2.0", result });
           })
           .catch((error) => callback(error, null));
@@ -520,11 +511,6 @@
 
   // Backwards compatibility - set as window.ethereum if none exists
   if (!window.ethereum) {
-    console.log("setting window.ethereum to provider");
     window.ethereum = provider;
-  } else {
-    console.log("window.ethereum already exists");
   }
-
-  console.log("stupid wallet provider initialized with EIP-6963 support");
 })();

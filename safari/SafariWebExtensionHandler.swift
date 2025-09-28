@@ -14,9 +14,12 @@ import Wallet
 import Web3
 import Web3ContractABI
 import Web3PromiseKit
+import OSLog
 
 class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
   private let appGroupId = Constants.appGroupId
+
+  let logger = Logger(subsystem: "co.za.stephancill.stupid-wallet", category: "SafariWebExtensionHandler")
 
   struct AppMetadata {
     let domain: String?
@@ -306,6 +309,7 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
   private func handleAccounts() -> [String: Any] {
     let address = getSavedAddress()
+    logger.info("handleAccounts: \(address ?? "<nil>", privacy: .public)")
     if let address = address {
       return ["result": [address]]
     } else {

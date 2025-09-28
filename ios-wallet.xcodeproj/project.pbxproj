@@ -51,6 +51,7 @@
 
 /* Begin PBXFileReference section */
 		D452C0D22E69096F0035444E /* ios-walletTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "ios-walletTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		D4D592372E89B3AE00BD977A /* stupid-wallet-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "stupid-wallet-Info.plist"; sourceTree = "<group>"; };
 		D4F3895E2E51FA740019E0C0 /* stupid wallet.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "stupid wallet.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		D4F389702E51FA9D0019E0C0 /* safari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = safari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -139,6 +140,7 @@
 		D4F389552E51FA740019E0C0 = {
 			isa = PBXGroup;
 			children = (
+				D4D592372E89B3AE00BD977A /* stupid-wallet-Info.plist */,
 				D421554A2E55E63E00EF2E37 /* shared */,
 				D4F389602E51FA740019E0C0 /* ios-wallet */,
 				D4F389712E51FA9D0019E0C0 /* safari */,
@@ -543,7 +545,8 @@
 				DEVELOPMENT_TEAM = 6JKMV57Y77;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "$(PRODUCT_NAME) (dev)";
+				INFOPLIST_FILE = "stupid-wallet-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "stupid wallet (dev)";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Used to authorize transactions and message signatures.";
@@ -578,7 +581,8 @@
 				DEVELOPMENT_TEAM = 6JKMV57Y77;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "$(PRODUCT_NAME)";
+				INFOPLIST_FILE = "stupid-wallet-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "stupid wallet (dev)";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Used to authorize transactions and message signatures.";

@@ -23,6 +23,7 @@ type RequestModalProps = {
   onOpenChange?: (open: boolean) => void;
   footerChildren?: React.ReactNode;
   address?: string;
+  primaryDisabled?: boolean;
 };
 
 export function RequestModal({
@@ -36,6 +37,7 @@ export function RequestModal({
   onOpenChange,
   footerChildren,
   address,
+  primaryDisabled = false,
 }: RequestModalProps) {
   const handlePrimaryClick = async () => {
     try {
@@ -89,7 +91,7 @@ export function RequestModal({
               </Button>
               <Button
                 onClick={handlePrimaryClick}
-                disabled={isSubmitting}
+                disabled={isSubmitting || primaryDisabled}
                 aria-busy={isSubmitting}
               >
                 {isSubmitting ? (

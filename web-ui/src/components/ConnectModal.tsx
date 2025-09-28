@@ -29,6 +29,10 @@ export function ConnectModal({
         });
       return result || [];
     },
+    refetchOnWindowFocus: true,
+    refetchInterval(query) {
+      return query.state.data && query.state.data.length > 0 ? 0 : 1000;
+    },
   });
 
   const walletAddress = accounts?.[0];
@@ -42,12 +46,57 @@ export function ConnectModal({
     }
   };
 
+  const handleSetup = async () => {
+    const tryOpen = (scheme: string) => {
+      try {
+        // 1) Direct navigation
+        (window.top || window).location.href = scheme;
+      } catch (_) {
+        // ignore
+      }
+      try {
+        // 2) Hidden anchor click
+        const a = document.createElement("a");
+        a.href = scheme;
+        a.style.display = "none";
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          try {
+            document.body.removeChild(a);
+          } catch (_) {}
+        }, 0);
+      } catch (_) {
+        // ignore
+      }
+      try {
+        // 3) window.open fallback
+        window.open(scheme, "_self");
+      } catch (_) {
+        // ignore
+      }
+    };
+
+    tryOpen("stupid-wallet://open");
+  };
+
   return (
     <RequestModal
       primaryButtonTitle="Connect"
       onPrimary={handleApprove}
       onReject={onReject}
       isSubmitting={isSubmitting}
+      primaryDisabled={!walletAddress}
+      footerChildren={
+        !walletAddress ? (
+          <button
+            className="text-xs underline text-muted-foreground hover:text-foreground"
+            onClick={handleSetup}
+          >
+            Set up
+          </button>
+        ) : null
+      }
     >
       <div className="space-y-4 text-sm">
         <div>This site wants to connect to your wallet.</div>
