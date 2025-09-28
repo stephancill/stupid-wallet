@@ -301,6 +301,25 @@ Acceptance:
   - On successful connect, set `accounts` and `selectedAddress`, and emit `accountsChanged`.
   - On `eth_accounts` success, also refresh `accounts`/`selectedAddress` for consistency.
 
+##### Implementation Notes (Phase 2.1)
+
+- Provider connection state is derived, not stored:
+  - Removed mutable writes to `isConnected`.
+  - Added a getter: `get isConnected() { return this.accounts.length > 0; }`.
+- Connect path forwards original method:
+  - `_requestAccounts` posts the incoming `method` unchanged (no forced `"wallet_connect"`).
+- Error propagation preserves EIP‑1193 shape end‑to‑end:
+  - Introduced `_toError(payloadError)` to convert `{ code, message, data }` into an `Error` while preserving `.code` and `.data`.
+  - Used in `_requestAccounts`, `_getAccounts`, and `_handleRequest` so `{ code: 4100, message: "Unauthorized" }` surfaces properly.
+- Accounts normalization and state updates:
+  - After successful connect (`eth_requestAccounts` or `wallet_connect`), normalize `response.result` to an array of addresses:
+    - Accepts either `string[]` or `{ accounts: (string | { address: string })[] }`.
+  - Set `this.accounts` and `this.selectedAddress = this.accounts[0] ?? null`, then emit `accountsChanged`.
+  - On `eth_accounts`, expect a `string[]`, update `accounts`/`selectedAddress` for consistency.
+- Logging hygiene:
+  - Replaced `"wallet_connect response"` with a neutral `"connect response"` log message.
+- No client‑side persistence of connection flags; background/native remains the source of truth.
+
 Acceptance:
 
 - Manual verifications in a test dApp:
