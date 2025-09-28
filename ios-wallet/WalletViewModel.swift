@@ -177,7 +177,9 @@ final class WalletViewModel: ObservableObject {
 
         if let defaults = UserDefaults(suiteName: appGroupId) {
             defaults.removeObject(forKey: "walletAddress")
+            defaults.removeObject(forKey: "connectedSites")
             print("[Wallet] Cleared saved address from app group store")
+            print("[Wallet] Cleared connected sites from app group store")
         } else {
             print("[Wallet] ERROR: Could not open app group defaults to clear address")
         }

@@ -337,6 +337,20 @@ Acceptance:
 
 - After clearing, subsequent dApp calls behave as unconnected across all domains.
 
+##### Implementation Notes (Phase 3)
+
+- Storage keys live under `shared/Constants.swift` in `Constants.Storage`:
+  - `walletAddressKey` = `"walletAddress"`
+  - `connectedSitesKey` = `"connectedSites"`
+- The app should clear both keys from the App Group store when the user clears their wallet:
+  - `UserDefaults(suiteName: appGroupId)?.removeObject(forKey: walletAddressKey)`
+  - `UserDefaults(suiteName: appGroupId)?.removeObject(forKey: connectedSitesKey)`
+- Idempotency: removing keys that do not exist is a no‑op.
+- Side‑effects after clearing:
+  - The extension will treat all domains as not connected; `eth_accounts` must return an EIP‑1193 error `{ code: 4100, message: "Unauthorized" }` until the user reconnects.
+  - `eth_requestAccounts`/`wallet_connect` will trigger the modal flow again and, upon approval, will repopulate `connectedSites` for that domain via background → native.
+- UI: No additional UI beyond the existing `SettingsView` action is required.
+
 #### Phase 4: Documentation and Developer Guidance
 
 - Update `CONTRIBUTING.md` with:
