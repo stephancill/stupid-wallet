@@ -368,7 +368,7 @@ Acceptance:
   - First-time connect (modal), then auto-connect for `eth_requestAccounts`.
   - `wallet_connect` short-circuits without capabilities; with SIWE capability it shows modal.
   - `eth_accounts` gated by connection presence.
-  - `wallet_disconnect` revokes; `eth_accounts` returns `[]` post-disconnect.
+  - `wallet_disconnect` revokes; `eth_accounts` returns throws post-disconnect.
   - App `clearWallet()` revokes all domains; subsequent calls behave as new session.
   - Iframe/embedded contexts: domain extraction yields correct hostname.
   - Multi-tab: connection shared across tabs for same domain.

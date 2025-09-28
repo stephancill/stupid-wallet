@@ -13,6 +13,7 @@ Thank you for your interest in contributing! This project is a stupid wallet app
     - `walletAddress` (checksummed address)
     - `chainId` (current chain as hex, e.g. `0x1`)
     - `customChains` (dictionary keyed by hex chainId containing chain metadata and optional `rpcUrls`)
+    - `connectedSites` (dictionary keyed by domain hostname; values contain `{ address?, connectedAt }` used to persist per‑domain dApp connection state and enable auto‑connect)
 
 - **Safari Web Extension** (`safari/`)
   - **Injected provider (main world)**: `safari/Resources/inject.js`
@@ -54,6 +55,27 @@ Thank you for your interest in contributing! This project is a stupid wallet app
   3. Background queries native/handler (or shared storage) and returns the result; for consented flows it first replies `{ pending: true }`.
   4. On `{ pending: true }`, the content script displays a modal and then sends a `WALLET_CONFIRM` to background; background finalizes by calling native and returns `{ result }` or `{ error }`.
   5. Content script posts the final response back to the injected provider, which resolves the original request.
+
+### Connected State and Auto‑connect
+
+- **Storage key and semantics**
+
+  - `connectedSites`: App Group `UserDefaults` dictionary mapping domain hostname → `{ address?: string, connectedAt: ISO‑8601 string }`.
+  - Source of truth shared by the app and extension; domains are normalized to lowercase hostnames.
+
+- **Auto‑connect rules**
+
+  - `eth_requestAccounts`: if the domain exists in `connectedSites`, short‑circuit (no modal) and return the account(s).
+  - `wallet_connect`: if `params[0].capabilities` is absent or an empty object and the domain exists in `connectedSites`, short‑circuit (no modal). If capabilities are present and non‑empty (e.g., SIWE), show the modal and run the full flow.
+
+- **Gating `eth_accounts`**
+
+  - When the domain is not in `connectedSites`, return an EIP‑1193 RPC error `{ code: 4100, message: "Unauthorized" }`.
+  - When connected, return the account list from the native handler.
+
+- **Disconnect and clearing**
+  - `wallet_disconnect` removes the domain from `connectedSites`.
+  - Clearing the wallet in the app also removes `connectedSites`, revoking auto‑connect for all domains.
 
 ### Code Layout
 
