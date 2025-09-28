@@ -12,6 +12,9 @@ struct SettingsView: View {
                     NavigationLink(destination: AuthorizationsListView(address: vm.addressHex)) {
                         Text("Authorizations")
                     }
+                    NavigationLink(destination: ConnectedAppsView()) {
+                        Text("Connected Apps")
+                    }
                     NavigationLink(destination: PrivateKeyView(vm: vm)) {
                         Text("Private Key")
                     }
