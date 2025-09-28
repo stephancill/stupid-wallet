@@ -114,7 +114,12 @@ struct ContentView: View {
                 .textInputAutocapitalization(.never)
                 .disableAutocorrection(true)
                 .textFieldStyle(.roundedBorder)
-            Button(action: { vm.savePrivateKey() }) {
+            Button(action: {
+                vm.savePrivateKey()
+                if vm.errorMessage == nil && vm.hasWallet {
+                    vm.privateKeyInput = ""
+                }
+            }) {
                 if vm.isSaving { ProgressView() } else { Text("Save") }
             }
             .buttonStyle(.borderedProminent)
