@@ -189,6 +189,22 @@ defaults.removeObject(forKey: "connectedSites")
 - Align on domain extraction semantics (hostname from `sender.tab.url`/`sender.url`/`sender.frameUrl`).
 - Verify App Group access in both app and extension targets.
 
+##### Implementation Notes (Phase 0)
+
+- Shared keys consolidated under `shared/Constants.swift` in `Constants.Storage`:
+  - `walletAddressKey` = `"walletAddress"`
+  - `chainIdKey` = `"chainId"`
+  - `customChainsKey` = `"customChains"`
+  - `connectedSitesKey` = `"connectedSites"`
+- Background domain extraction verified in `safari/Resources/background.js` using sender fallbacks:
+  - Prefers `sender.tab.url`, then `sender.url`, then `sender.frameUrl`
+  - Derives `domain`, `url`, `scheme`, and `origin` from the URL
+- Entitlements verified:
+  - App (`ios-wallet/ios-wallet.entitlements`) and Extension (`safari/safari.entitlements`) include App Group `group.co.za.stephancill.stupid-wallet`
+  - Keychain Sharing groups present and aligned with `Constants.accessGroup`
+  - `Constants.appGroupId` matches the App Group identifier
+- No functional changes were introduced in Phase 0; this phase is preparatory only.
+
 #### Phase 1: Native Handler Persistence API
 
 - File: `safari/SafariWebExtensionHandler.swift`

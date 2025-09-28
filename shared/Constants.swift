@@ -14,6 +14,13 @@ enum Constants {
     static let accessGroup = "6JKMV57Y77.co.za.stephancill.stupid-wallet"
     static let appGroupId = "group.co.za.stephancill.stupid-wallet"
 
+    enum Storage {
+        static let walletAddressKey = "walletAddress"
+        static let chainIdKey = "chainId"
+        static let customChainsKey = "customChains"
+        static let connectedSitesKey = "connectedSites"
+    }
+
     enum Networks {
         private static let defaultsKey = "customChains"
         private static let currentChainKey = "chainId"
