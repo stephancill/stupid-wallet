@@ -44,24 +44,42 @@ struct ActivityDetailView: View {
                     }
                 }) {
                     HStack {
-                        Text(item.txHash)
-                            .font(.system(.body, design: .monospaced))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                        Text("Hash")
                         Spacer()
-                        Image(systemName: didCopyHash ? "checkmark" : "doc.on.doc")
+                        HStack(spacing: 6) {
+                            Text(item.txHash)
+                                .font(.system(.body, design: .monospaced))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Image(systemName: didCopyHash ? "checkmark" : "doc.on.doc")
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
                 .buttonStyle(.plain)
-            }
-            Section("Status") {
-                Text(item.status.capitalized)
-            }
-            Section("Network") {
-                Text(chainName(from: item.chainIdHex))
-            }
-            Section("Timestamp") {
-                Text(item.createdAt.formatted(date: .abbreviated, time: .shortened))
+
+                HStack {
+                    Text("Status")
+                    Spacer()
+                    Text(item.status.capitalized)
+                        .foregroundColor(.secondary)
+                }
+
+                HStack {
+                    Text("Network")
+                    Spacer()
+                    Text(chainName(from: item.chainIdHex))
+                        .foregroundColor(.secondary)
+                }
+
+                HStack {
+                    Text("Timestamp")
+                    Spacer()
+                    Text(item.createdAt.formatted(date: .abbreviated, time: .shortened))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.trailing)
+                }
             }
             Section {
                 Button(action: { openExplorer() }) {

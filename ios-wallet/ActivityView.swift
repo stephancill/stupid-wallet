@@ -32,12 +32,6 @@ struct ActivityView: View {
         return Constants.Networks.chainName(forChainId: id)
     }
 
-    private func relativeTime(_ date: Date) -> String {
-        let fmt = RelativeDateTimeFormatter()
-        fmt.unitsStyle = .short
-        return fmt.localizedString(for: date, relativeTo: Date())
-    }
-
     var body: some View {
         List(vm.items, id: \.txHash) { item in
             NavigationLink(destination: ActivityDetailView(item: item)) {
@@ -73,7 +67,7 @@ struct ActivityView: View {
                         .truncationMode(.middle)
                     }
                     Spacer()
-                    Text(relativeTime(item.createdAt))
+                    Text(TimeUtils.abbreviatedRelative(from: item.createdAt))
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.trailing)
                 }

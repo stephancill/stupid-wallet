@@ -7,12 +7,6 @@
 
 import SwiftUI
 
-private func formatRelative(_ date: Date) -> String {
-    let formatter = RelativeDateTimeFormatter()
-    formatter.unitsStyle = .full
-    return formatter.localizedString(for: date, relativeTo: Date())
-}
-
 private func formatExact(_ date: Date) -> String {
     let formatter = DateFormatter()
     formatter.dateStyle = .medium
@@ -47,7 +41,7 @@ struct ConnectedAppsView: View {
                             HStack {
                                 Text(site.domain)
                                 Spacer()
-                                Text(formatRelative(site.connectedAt))
+                                Text(TimeUtils.abbreviatedRelative(from: site.connectedAt))
                                     .foregroundColor(.secondary)
                                     .font(.subheadline)
                             }
