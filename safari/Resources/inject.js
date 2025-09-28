@@ -11,7 +11,6 @@
   // EIP-1193 Provider Implementation
   class EthereumProvider {
     constructor() {
-      this.isConnected = false;
       this.chainId = "0x1"; // Ethereum mainnet
       this.selectedAddress = null;
       this.accounts = [];
@@ -24,6 +23,11 @@
       this.send = this.send.bind(this);
       this.sendAsync = this.sendAsync.bind(this);
       this.enable = this.enable.bind(this);
+    }
+
+    // Derived connection state from accounts only
+    get isConnected() {
+      return Array.isArray(this.accounts) && this.accounts.length > 0;
     }
 
     // EIP-1193 request method
@@ -97,7 +101,8 @@
 
           const response = event.data.response;
 
-          console.log("wallet_connect response", response);
+          // Neutral log for connect responses
+          console.log("connect response", response);
 
           // Ignore interim pending responses if any (content doesn't forward them)
           if (response && response.pending) {
@@ -111,15 +116,33 @@
             if (response.error === "User rejected the request") {
               console.log("User rejected the connection request");
             }
-            reject(new Error(response.error));
+            reject(this._toError(response.error));
             return;
           }
 
-          this.accounts = (response.result?.accounts || []).map(
-            (account) => account.address
-          );
+          // Normalize accounts from result depending on method/result shape
+          let newAccounts = [];
+          const result = response.result;
+          if (method === "eth_requestAccounts") {
+            if (Array.isArray(result)) {
+              newAccounts = result;
+            } else if (result && Array.isArray(result.accounts)) {
+              newAccounts = result.accounts
+                .map((a) => (typeof a === "string" ? a : a && a.address))
+                .filter(Boolean);
+            }
+          } else {
+            if (result && Array.isArray(result.accounts)) {
+              newAccounts = result.accounts
+                .map((a) => (typeof a === "string" ? a : a && a.address))
+                .filter(Boolean);
+            } else if (Array.isArray(result)) {
+              newAccounts = result;
+            }
+          }
+
+          this.accounts = newAccounts;
           this.selectedAddress = this.accounts[0] || null;
-          this.isConnected = this.accounts.length > 0;
 
           // Emit accountsChanged event
           this._emit("accountsChanged", this.accounts);
@@ -139,7 +162,7 @@
         window.postMessage(
           {
             source: "stupid-wallet-inject",
-            method: "wallet_connect",
+            method: method,
             params: params || [],
             requestId: requestId,
           },
@@ -176,11 +199,14 @@
           const response = event.data.response;
 
           if (response.error) {
-            reject(new Error(response.error));
+            reject(this._toError(response.error));
             return;
           }
 
-          this.accounts = response.result || [];
+          // Standardize accounts shape (array of addresses)
+          const result = response.result;
+          this.accounts = Array.isArray(result) ? result : [];
+          this.selectedAddress = this.accounts[0] || null;
           resolve(this.accounts);
         };
 
@@ -340,7 +366,7 @@
           window.removeEventListener("message", responseHandler);
 
           if (response && response.error) {
-            reject(new Error(response.error));
+            reject(this._toError(response.error));
             return;
           }
 
@@ -369,6 +395,21 @@
     // Generate unique request ID
     _generateRequestId() {
       return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    }
+
+    // Convert EIP-1193 error payloads to Error instances preserving code/data
+    _toError(payloadError) {
+      if (payloadError && typeof payloadError === "object") {
+        const err = new Error(payloadError.message || "Request failed");
+        if (payloadError.code !== undefined) {
+          err.code = payloadError.code;
+        }
+        if (payloadError.data !== undefined) {
+          err.data = payloadError.data;
+        }
+        return err;
+      }
+      return new Error(String(payloadError));
     }
 
     // Event handling (EIP-1193)

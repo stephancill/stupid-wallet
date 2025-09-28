@@ -6,9 +6,6 @@ const NATIVE_APP_ID = "co.za.stephancill.stupid-wallet"; // Bundle ID of contain
 // Store site metadata for pending requests so it can be accessed during confirmation
 const pendingRequests = new Map();
 
-// Store connection state per domain
-const connectedDomains = new Set();
-
 // Clean up old pending requests to prevent memory leaks
 function cleanupOldRequests() {
   const now = Date.now();
@@ -25,47 +22,47 @@ function cleanupOldRequests() {
 // Run cleanup every 2 minutes
 setInterval(cleanupOldRequests, 2 * 60 * 1000);
 
-// Load connection state from storage
-async function loadConnectionState() {
+// Native-backed connection helpers (Phase 2)
+async function isDomainConnected(siteMetadata) {
   try {
-    const result = await browser.storage.local.get(["connectedDomains"]);
-    if (result.connectedDomains) {
-      result.connectedDomains.forEach((domain) => connectedDomains.add(domain));
-      console.log("Loaded connected domains:", Array.from(connectedDomains));
-    }
-  } catch (error) {
-    console.warn("Failed to load connection state:", error);
-  }
-}
-
-// Save connection state to storage
-async function saveConnectionState() {
-  try {
-    await browser.storage.local.set({
-      connectedDomains: Array.from(connectedDomains),
+    const response = await callNative({
+      method: "stupid_isConnected",
+      params: [],
+      siteMetadata,
     });
-  } catch (error) {
-    console.warn("Failed to save connection state:", error);
+    if (response && typeof response.result === "boolean") {
+      return response.result;
+    }
+  } catch (e) {
+    // Fall through to default false
+  }
+  return false;
+}
+
+async function persistConnect(siteMetadata) {
+  try {
+    const response = await callNative({
+      method: "stupid_connectDomain",
+      params: [],
+      siteMetadata,
+    });
+    return !!(response && response.result === true);
+  } catch (e) {
+    return false;
   }
 }
 
-// Check if domain is connected
-function isDomainConnected(domain) {
-  return connectedDomains.has(domain);
-}
-
-// Mark domain as connected
-function connectDomain(domain) {
-  connectedDomains.add(domain);
-  saveConnectionState();
-  console.log(`Domain ${domain} connected`);
-}
-
-// Disconnect domain
-function disconnectDomain(domain) {
-  connectedDomains.delete(domain);
-  saveConnectionState();
-  console.log(`Domain ${domain} disconnected`);
+async function persistDisconnect(siteMetadata) {
+  try {
+    const response = await callNative({
+      method: "stupid_disconnectDomain",
+      params: [],
+      siteMetadata,
+    });
+    return !!(response && response.result === true);
+  } catch (e) {
+    return false;
+  }
 }
 
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -138,9 +135,11 @@ async function handleWalletRequest(message, sender, sendResponse) {
     switch (method) {
       // Fast methods - confirmation not required
       case "eth_accounts": {
-        // Only return accounts if domain is connected
-        if (!isDomainConnected(siteMetadata.domain)) {
-          return sendResponse({ result: [] });
+        // Gate by connection state; throw 4100 if not connected
+        if (!(await isDomainConnected(siteMetadata))) {
+          return sendResponse({
+            error: { code: 4100, message: "Unauthorized" },
+          });
         }
         const native = await callNative({
           method,
@@ -185,13 +184,13 @@ async function handleWalletRequest(message, sender, sendResponse) {
         return sendResponse({ error: "Request failed" });
       }
       case "wallet_disconnect": {
-        // Disconnect the domain
-        disconnectDomain(siteMetadata.domain);
+        // Call native then persist disconnect (idempotent)
         const native = await callNative({
           method,
           params,
           siteMetadata,
         });
+        await persistDisconnect(siteMetadata);
         if (native && native.result)
           return sendResponse({ result: native.result });
         if (native && native.error)
@@ -199,13 +198,57 @@ async function handleWalletRequest(message, sender, sendResponse) {
         return sendResponse({ error: "Request failed" });
       }
       // Methods that require confirmation
-      case "eth_requestAccounts":
-      case "wallet_connect":
+      case "eth_requestAccounts": {
+        // Short-circuit if already connected
+        if (await isDomainConnected(siteMetadata)) {
+          const native = await callNative({
+            method,
+            params,
+            siteMetadata,
+          });
+          if (native && native.result)
+            return sendResponse({ result: native.result });
+          if (native && native.error)
+            return sendResponse({ error: native.error });
+          return sendResponse({ error: "Request failed" });
+        }
+        // Otherwise go pending; on approval, confirmation handler will persist
+        sendResponse({ pending: true });
+        break;
+      }
+      case "wallet_connect": {
+        const caps = params && params[0] && params[0].capabilities;
+        const hasCapabilities =
+          caps && typeof caps === "object" && Object.keys(caps).length > 0;
+        if (!hasCapabilities && (await isDomainConnected(siteMetadata))) {
+          // Short-circuit without modal
+          const native = await callNative({
+            method,
+            params,
+            siteMetadata,
+          });
+          if (native && native.result)
+            return sendResponse({ result: native.result });
+          if (native && native.error)
+            return sendResponse({ error: native.error });
+          return sendResponse({ error: "Request failed" });
+        }
+        // With capabilities or not connected → pending
+        sendResponse({ pending: true });
+        break;
+      }
+
       case "eth_signTypedData_v4":
       case "personal_sign":
       case "eth_sendTransaction":
       case "wallet_sendCalls": {
-        // Show in-page modal first; complete after approval
+        // Gate by connection state; throw 4100 if not connected
+        if (!(await isDomainConnected(siteMetadata))) {
+          return sendResponse({
+            error: { code: 4100, message: "Unauthorized" },
+          });
+        }
+        // Show in-page modal; complete after approval
         sendResponse({ pending: true });
         break;
       }
@@ -244,12 +287,9 @@ async function handleWalletConfirm(message, sendResponse) {
       siteMetadata,
     });
     if (native && native.result) {
-      // Mark domain as connected for connection methods
-      if (
-        (method === "eth_requestAccounts" || method === "wallet_connect") &&
-        siteMetadata.domain
-      ) {
-        connectDomain(siteMetadata.domain);
+      // Persist connection for connect methods
+      if (method === "eth_requestAccounts" || method === "wallet_connect") {
+        await persistConnect(siteMetadata);
       }
 
       // Clean up stored metadata after successful confirmation
@@ -283,12 +323,10 @@ async function handleWalletConfirm(message, sendResponse) {
 // Handle extension installation/startup
 browser.runtime.onInstalled.addListener(async () => {
   console.log("stupid wallet Safari Extension installed");
-  await loadConnectionState();
 });
 
 browser.runtime.onStartup.addListener(async () => {
   console.log("stupid wallet Safari Extension started");
-  await loadConnectionState();
 });
 
 async function callNative(payload) {

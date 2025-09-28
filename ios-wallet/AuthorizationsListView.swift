@@ -77,7 +77,7 @@ struct AuthorizationsListView: View {
                 }
             }
         }
-        .navigationTitle("Account Authorizations")
+        .navigationTitle("Authorizations")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
