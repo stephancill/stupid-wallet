@@ -242,7 +242,13 @@ async function handleWalletRequest(message, sender, sendResponse) {
       case "personal_sign":
       case "eth_sendTransaction":
       case "wallet_sendCalls": {
-        // Show in-page modal first; complete after approval
+        // Gate by connection state; throw 4100 if not connected
+        if (!(await isDomainConnected(siteMetadata))) {
+          return sendResponse({
+            error: { code: 4100, message: "Unauthorized" },
+          });
+        }
+        // Show in-page modal; complete after approval
         sendResponse({ pending: true });
         break;
       }
