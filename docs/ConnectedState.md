@@ -267,6 +267,23 @@ Acceptance:
       - Else → `{ pending: true }`; on approval+success, `await persistConnect`.
     - `wallet_disconnect`: call native and `await persistDisconnect` (idempotent).
 
+##### Implementation Notes (Phase 2)
+
+- Background no longer maintains an in-memory `connectedDomains` Set or persists it in `browser.storage.local`. All connection state queries and mutations go through native (`sendNativeMessage`).
+- Helpers:
+  - `isDomainConnected(siteMetadata)` → calls native `stupid_isConnected` and returns a boolean; if native is unavailable, default to `false` (modal flows will still work).
+  - `persistConnect(siteMetadata)` → calls native `stupid_connectDomain` after successful approval of `eth_requestAccounts`/`wallet_connect`; idempotent and updates `connectedAt`.
+  - `persistDisconnect(siteMetadata)` → calls native `stupid_disconnectDomain` after `wallet_disconnect`; idempotent and safe if no existing entry.
+- Gating `eth_accounts` strictly:
+  - When not connected, return an EIP‑1193 RPC error `{ code: 4100, message: "Unauthorized" }` (do not return `[]`). When connected, forward to native and return its result.
+- Short-circuit rules:
+  - `eth_requestAccounts`: if `isDomainConnected` is true → call native and return immediately (no modal). Otherwise, return `{ pending: true }` and persist on approval.
+  - `wallet_connect`: compute `const caps = params?.[0]?.capabilities`. If `caps` is present and has keys → always `{ pending: true }`. Else if `isDomainConnected` is true → call native and return (no modal). Otherwise, `{ pending: true }` and persist on approval.
+- Special helper for previews: `stupid_getWalletAddress` may call native `eth_accounts` without connection gating to render pre-connect UI; it does not mutate connection state.
+- Error propagation: pass native `{ result }` or `{ error: { code, message, data? } }` through unchanged to the injected provider to preserve EIP‑1193 semantics (e.g., 4100 Unauthorized).
+- Startup listeners: remove `onInstalled`/`onStartup` logic that loaded/saved connection state; background now relies solely on native persistence.
+- Compatibility: If the native app is older and lacks `stupid_*` methods, treat the site as not connected (show modal). Do not hard-fail.
+
 Acceptance:
 
 - Console traces show short-circuiting paths per rules; no usage of local storage for connections.
