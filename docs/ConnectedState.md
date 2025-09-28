@@ -99,7 +99,16 @@ Persist and unify dApp connection state across the Safari Web Extension and the 
 
 ### Extension: Injected Provider (`inject.js`)
 
-- No changes. The background enforces short-circuit rules and persistence.
+- Forward the original connect method from the page:
+  - In `_requestAccounts`, do not force `"wallet_connect"`; post the incoming `method` unchanged so the background can apply short‑circuit rules.
+- Derive connected state from accounts only:
+  - Remove mutable `isConnected` writes; optionally expose a getter `get isConnected() { return this.accounts.length > 0; }`.
+- Standardize EIP‑1193 error passthrough:
+  - Preserve `{ code, message, data }` when rejecting in `_requestAccounts`, `_getAccounts`, and `_handleRequest` (e.g., 4100 Unauthorized from background).
+- Minimal state updates:
+  - On successful connect, set `accounts` and `selectedAddress`, emit `accountsChanged`.
+  - On successful `eth_accounts`, also refresh `accounts`/`selectedAddress` for consistency.
+  - Do not persist any connection flags in page context; background/native is source of truth.
 
 ### Native Handler (Swift) Changes
 
@@ -220,9 +229,23 @@ defaults.removeObject(forKey: "connectedSites")
     - `stupid_disconnectDomain` → removes `appMetadata.domain`.
   - Keep existing RPC handlers unchanged for now; persistence is driven by background after approval.
 
+##### Implementation Notes (Phase 1)
+
+- Persistence uses App Group `UserDefaults` under key `Constants.Storage.connectedSitesKey` ("connectedSites").
+- Domains are normalized to lowercase hostnames; each entry stores:
+  - `address` (optional): current saved wallet address from `walletAddress`.
+  - `connectedAt`: ISO‑8601 timestamp at time of persistence.
+- Bridge methods rely on `appMetadata.domain` extracted from the request:
+  - `stupid_isConnected` → returns `{ "result": Boolean }`.
+  - `stupid_connectDomain` → persists current domain and returns `{ "result": true }`.
+  - `stupid_disconnectDomain` → removes current domain and returns `{ "result": true }`.
+- Idempotency:
+  - Re‑connecting overwrites the entry (updates `connectedAt`), disconnecting a non‑existent domain is a no‑op.
+- No behavior changes to existing wallet RPC handlers; background remains responsible for short‑circuit rules in Phase 2.
+
 Acceptance:
 
-- Manual call via background to each `stupid_*` method returns expected results and updates `UserDefaults`.
+- Manual call via background to each `stupid_*` method returns expected results and updates `UserDefaults`. (Deferred to Phase 2)
 
 #### Phase 2: Background Migration and Short-Circuit Rules
 
@@ -233,7 +256,7 @@ Acceptance:
     - `persistConnect(siteMetadata)` → `stupid_connectDomain`.
     - `persistDisconnect(siteMetadata)` → `stupid_disconnectDomain`.
   - Update handlers:
-    - `eth_accounts`: if `!await isDomainConnected` → `[]`; else call native and return.
+    - `eth_accounts`: if `!await isDomainConnected` → throw `{ code: 4100, message: "Unauthorized" }`; else call native and return.
     - `eth_requestAccounts`:
       - If `await isDomainConnected` → short-circuit (no modal): call native (`eth_accounts` or `eth_requestAccounts`) and return.
       - Else → `{ pending: true }`; on approval+success, `await persistConnect`.
@@ -243,11 +266,31 @@ Acceptance:
       - Else if `await isDomainConnected` → short-circuit (no modal): call native `wallet_connect` (or `eth_accounts`) and return.
       - Else → `{ pending: true }`; on approval+success, `await persistConnect`.
     - `wallet_disconnect`: call native and `await persistDisconnect` (idempotent).
-  - Optional: on install, remove legacy `connectedDomains` key from `browser.storage.local`.
 
 Acceptance:
 
 - Console traces show short-circuiting paths per rules; no usage of local storage for connections.
+
+#### Phase 2.1: Injected Provider Simplification (`safari/Resources/inject.js`)
+
+- Forward original connect method from page to background:
+  - In the provider's connect path (`_requestAccounts`), do not force `"wallet_connect"`; forward the incoming `method` unchanged.
+- Derive connected state from accounts:
+  - Remove manual writes to `isConnected`; optionally provide a getter `get isConnected() { return this.accounts.length > 0; }`.
+- Preserve EIP‑1193 error objects end-to-end:
+  - When background returns `{ error: { code, message, data } }`, reject with an Error carrying the same fields in `_requestAccounts`, `_getAccounts`, and `_handleRequest`.
+  - This enables 4100 Unauthorized to propagate correctly to dApps for `eth_accounts` when not connected.
+- Keep provider state minimal:
+  - On successful connect, set `accounts` and `selectedAddress`, and emit `accountsChanged`.
+  - On `eth_accounts` success, also refresh `accounts`/`selectedAddress` for consistency.
+
+Acceptance:
+
+- Manual verifications in a test dApp:
+  - Calling `eth_requestAccounts` when already connected resolves immediately without a modal; provider updates `accounts` and emits `accountsChanged`.
+  - Calling `wallet_connect` without capabilities when already connected resolves immediately; with capabilities (e.g., SIWE) shows modal.
+  - Calling `eth_accounts` when not connected results in a rejected promise with `{ code: 4100, message: "Unauthorized" }`.
+  - Provider no longer logs misleading "wallet_connect response" for `eth_requestAccounts`; logs are neutral.
 
 #### Phase 3: App Clearing Behavior
 

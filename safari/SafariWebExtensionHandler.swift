@@ -103,6 +103,23 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     }
 
     switch method {
+    case "stupid_isConnected":
+      guard let domain = appMetadata.domain, !domain.isEmpty else {
+        return ["error": "No domain available"]
+      }
+      return ["result": isDomainConnected(domain)]
+    case "stupid_connectDomain":
+      guard let domain = appMetadata.domain, !domain.isEmpty else {
+        return ["error": "No domain available"]
+      }
+      connectDomain(domain, address: getSavedAddress())
+      return ["result": true]
+    case "stupid_disconnectDomain":
+      guard let domain = appMetadata.domain, !domain.isEmpty else {
+        return ["error": "No domain available"]
+      }
+      disconnectDomain(domain)
+      return ["result": true]
     case "eth_requestAccounts":
       return handleRequestAccounts()
     case "wallet_connect":
@@ -688,6 +705,52 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     } else {
       return nil
     }
+  }
+
+  // MARK: - Connected Sites Persistence (App Group)
+
+  private func getConnectedSites() -> [String: [String: Any]] {
+    let defaults = UserDefaults(suiteName: appGroupId)
+    let key = Constants.Storage.connectedSitesKey
+    return defaults?.dictionary(forKey: key) as? [String: [String: Any]] ?? [:]
+  }
+
+  private func isDomainConnected(_ domain: String) -> Bool {
+    let key = Constants.Storage.connectedSitesKey
+    let defaults = UserDefaults(suiteName: appGroupId)
+    let d = domain.lowercased()
+    if let dict = defaults?.dictionary(forKey: key) as? [String: [String: Any]] {
+      return dict[d] != nil
+    }
+    return false
+  }
+
+  private func connectDomain(_ domain: String, address: String?) {
+    let defaults = UserDefaults(suiteName: appGroupId)
+    let key = Constants.Storage.connectedSitesKey
+    var dict = defaults?.dictionary(forKey: key) as? [String: [String: Any]] ?? [:]
+    let d = domain.lowercased()
+    var meta: [String: Any] = [:]
+    if let address = address, !address.isEmpty { meta["address"] = address }
+    let iso = ISO8601DateFormatter()
+    meta["connectedAt"] = iso.string(from: Date())
+    dict[d] = meta
+    defaults?.set(dict, forKey: key)
+  }
+
+  private func disconnectDomain(_ domain: String) {
+    let defaults = UserDefaults(suiteName: appGroupId)
+    let key = Constants.Storage.connectedSitesKey
+    var dict = defaults?.dictionary(forKey: key) as? [String: [String: Any]] ?? [:]
+    let d = domain.lowercased()
+    dict.removeValue(forKey: d)
+    defaults?.set(dict, forKey: key)
+  }
+
+  private func clearAllConnections() {
+    let defaults = UserDefaults(suiteName: appGroupId)
+    let key = Constants.Storage.connectedSitesKey
+    defaults?.removeObject(forKey: key)
   }
 
   private func isChainSupported(_ chainIdHex: String) -> Bool {
