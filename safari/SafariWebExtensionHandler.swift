@@ -1170,9 +1170,19 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         domain: "SIWE", code: 2,
         userInfo: [NSLocalizedDescriptionKey: "Unsupported chain ID for SIWE: \(chainId)"])
     }
+    // Prepare display chain ID as integer (decimal) per SIWE spec
+    let chainIdDisplay: String = {
+      let s = chainId.lowercased()
+      if s.hasPrefix("0x"), let n = BigUInt(String(s.dropFirst(2)), radix: 16) {
+        return String(n)
+      }
+      return chainId
+    }()
     // Use app metadata domain/URI as primary, fall back to params or defaults
     let domain = params["domain"] as? String ?? appMetadata.domain ?? "unknown-domain"
     let uri = params["uri"] as? String ?? appMetadata.uri ?? "https://\(domain)"
+    // Remove a single trailing slash for SIWE formatting
+    let cleanedUri = uri.hasSuffix("/") ? String(uri.dropLast()) : uri
     let version = params["version"] as? String ?? "1"
     let issuedAt = params["issuedAt"] as? String ?? ISO8601DateFormatter().string(from: Date())
     let expirationTime = params["expirationTime"] as? String
@@ -1188,9 +1198,9 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
       message += "\(statement)\n\n"
     }
 
-    message += "URI: \(uri)\n"
+    message += "URI: \(cleanedUri)\n"
     message += "Version: \(version)\n"
-    message += "Chain ID: \(chainId)\n"
+    message += "Chain ID: \(chainIdDisplay)\n"
     message += "Nonce: \(nonce)\n"
     message += "Issued At: \(issuedAt)\n"
 
