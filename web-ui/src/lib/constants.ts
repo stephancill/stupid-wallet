@@ -19,6 +19,8 @@ export const FAST_METHODS = [
   "wallet_addEthereumChain",
   "wallet_switchEthereumChain",
   "wallet_disconnect",
+  "wallet_getCapabilities",
+  "wallet_getCallsStatus",
 ] as const;
 
 // Note: supported methods are also independently declared in
