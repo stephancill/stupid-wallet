@@ -33,7 +33,7 @@ struct ActivityView: View {
     }
 
     var body: some View {
-        List(vm.items, id: \.txHash) { item in
+        List(vm.items, id: \.createdAt) { item in
             NavigationLink(destination: ActivityDetailView(item: item)) {
                 HStack(alignment: .center) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -41,23 +41,29 @@ struct ActivityView: View {
                             .lineLimit(1)
                             .truncationMode(.tail)
                         HStack(spacing: 6) {
-                            if item.status == "pending" {
-                                ProgressView()
-                                    .controlSize(.small)
-                                    .scaleEffect(0.7)
-                                Text("Pending")
-                                Text("•")
-                                Text(chainName(from: item.chainIdHex))
-                            } else if item.status != "confirmed" {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.red)
-                                    .imageScale(.small)
-                                Text("Failed")
-                                Text("•")
-                                Text(chainName(from: item.chainIdHex))
-                            } else {
-                                Text(truncatedHash(item.txHash))
-                                    .font(.system(.body, design: .monospaced))
+                            switch item.itemType {
+                            case .transaction:
+                                if item.status == "pending" {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                        .scaleEffect(0.7)
+                                    Text("Pending")
+                                    Text("•")
+                                    Text(chainName(from: item.chainIdHex))
+                                } else if item.status != "confirmed" {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundColor(.red)
+                                        .imageScale(.small)
+                                    Text("Failed")
+                                    Text("•")
+                                    Text(chainName(from: item.chainIdHex))
+                                } else {
+                                    Text("Transaction")
+                                    Text("•")
+                                    Text(chainName(from: item.chainIdHex))
+                                }
+                            case .signature:
+                                Text("Signature")
                                 Text("•")
                                 Text(chainName(from: item.chainIdHex))
                             }

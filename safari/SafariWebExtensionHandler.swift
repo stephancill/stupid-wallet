@@ -141,10 +141,10 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
       return await handleGetTransactionByHash(params: params)
     case "personal_sign":
       let params = messageDict["params"] as? [Any]
-      return handlePersonalSign(params: params)
+      return handlePersonalSign(params: params, appMetadata: appMetadata)
     case "eth_signTypedData_v4":
       let params = messageDict["params"] as? [Any]
-      return handleSignTypedDataV4(params: params)
+      return handleSignTypedDataV4(params: params, appMetadata: appMetadata)
     case "eth_sendTransaction":
       let params = messageDict["params"] as? [Any]
       return handleSendTransaction(params: params, appMetadata: appMetadata)
@@ -283,6 +283,29 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
           let siweResult = try handleSignInWithEthereum(
             params: siweParams, address: address, chainIds: supportedChainIds,
             appMetadata: appMetadata)
+          
+          // Log SIWE signature (best-effort)
+          if let sigHex = siweResult["signature"] as? String,
+             let message = siweResult["message"] as? String {
+            do {
+              let app = ActivityStore.AppMetadata(
+                domain: appMetadata.domain,
+                uri: appMetadata.uri,
+                scheme: appMetadata.scheme
+              )
+              try ActivityStore.shared.logSignature(
+                signatureHex: sigHex,
+                messageContent: message,  // Store formatted SIWE message
+                chainIdHex: supportedChainIds.first ?? "0x1",
+                method: "wallet_connect_siwe",
+                fromAddress: address,
+                app: app
+              )
+            } catch {
+              // Ignore logging failures
+            }
+          }
+          
           capabilities["signInWithEthereum"] = siweResult
         } catch {
           return ["error": "SIWE signing failed"]
@@ -317,7 +340,7 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     }
   }
 
-  private func handlePersonalSign(params: [Any]?) -> [String: Any] {
+  private func handlePersonalSign(params: [Any]?, appMetadata: AppMetadata) -> [String: Any] {
     guard let params = params, params.count >= 2 else {
       return ["error": "Invalid personal_sign params"]
     }
@@ -381,13 +404,33 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
       canonical.append(s32)
       canonical.append(vCanonical)
       let sigHex = "0x" + canonical.map { String(format: "%02x", $0) }.joined()
+      
+      // Log signature (best-effort; failures must not affect RPC response)
+      do {
+        let app = ActivityStore.AppMetadata(
+          domain: appMetadata.domain,
+          uri: appMetadata.uri,
+          scheme: appMetadata.scheme
+        )
+        try ActivityStore.shared.logSignature(
+          signatureHex: sigHex,
+          messageContent: messageHex,
+          chainIdHex: Constants.Networks.getCurrentChainIdHex(),
+          method: "personal_sign",
+          fromAddress: saved,
+          app: app
+        )
+      } catch {
+        // Ignore logging failures
+      }
+      
       return ["result": sigHex]
     } catch {
       return ["error": "Signing failed"]
     }
   }
 
-  private func handleSignTypedDataV4(params: [Any]?) -> [String: Any] {
+  private func handleSignTypedDataV4(params: [Any]?, appMetadata: AppMetadata) -> [String: Any] {
     guard let params = params, params.count >= 2 else {
       return ["error": "Invalid eth_signTypedData_v4 params"]
     }
@@ -430,6 +473,26 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
       canonical.append(s32)
       canonical.append(vCanonical)
       let sigHex = "0x" + canonical.map { String(format: "%02x", $0) }.joined()
+      
+      // Log signature (best-effort)
+      do {
+        let app = ActivityStore.AppMetadata(
+          domain: appMetadata.domain,
+          uri: appMetadata.uri,
+          scheme: appMetadata.scheme
+        )
+        try ActivityStore.shared.logSignature(
+          signatureHex: sigHex,
+          messageContent: typedDataJSON,  // Store full JSON
+          chainIdHex: Constants.Networks.getCurrentChainIdHex(),
+          method: "eth_signTypedData_v4",
+          fromAddress: saved,
+          app: app
+        )
+      } catch {
+        // Ignore logging failures
+      }
+      
       return ["result": sigHex]
     } catch {
       return ["error": "Signing failed"]

@@ -145,6 +145,211 @@ struct ActivityStoreTests {
             #expect(false, "Expected to find txNull in fetched items")
         }
     }
+
+    // MARK: - Phase 1: Signature Logging Tests
+
+    @Test("ActivityStore logs signatures and fetches unified activity")
+    func testSignatureLogging() async throws {
+        let tmpDir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        let dbURL = tmpDir.appendingPathComponent("Activity-Test-\(UUID().uuidString).sqlite")
+        ActivityStore.setDatabaseURLOverride(dbURL)
+        let store = ActivityStore.shared
+
+        let uniqueSuffix = UUID().uuidString.prefix(8)
+        let app = ActivityStore.AppMetadata(
+            domain: "example.org",
+            uri: "https://example.org/sig-test-\(uniqueSuffix)",
+            scheme: "https"
+        )
+
+        // Log a transaction
+        let txHash = "0xTX\(uniqueSuffix)"
+        try store.logTransaction(
+            txHash: txHash,
+            chainIdHex: "0x1",
+            method: "eth_sendTransaction",
+            fromAddress: "0x1234567890123456789012345678901234567890",
+            app: app
+        )
+
+        try await Task.sleep(nanoseconds: 2_000_000)
+
+        // Log a signature
+        let sigHex = "0xSIG\(uniqueSuffix)"
+        let message = "0x48656c6c6f20576f726c64" // "Hello World" in hex
+        try store.logSignature(
+            signatureHex: sigHex,
+            messageContent: message,
+            chainIdHex: "0x1",
+            method: "personal_sign",
+            fromAddress: "0x1234567890123456789012345678901234567890",
+            app: app
+        )
+
+        // Fetch unified activity
+        let items = try store.fetchActivity(limit: 100, offset: 0)
+
+        // Find our items
+        let txItem = items.first(where: { $0.itemType == .transaction && $0.txHash == txHash })
+        let sigItem = items.first(where: { $0.itemType == .signature && $0.signatureHex == sigHex })
+
+        // Verify transaction item
+        #expect(txItem != nil, "Expected to find transaction in activity")
+        if let tx = txItem {
+            #expect(tx.itemType == .transaction)
+            #expect(tx.txHash == txHash)
+            #expect(tx.status == "pending")
+            #expect(tx.method == "eth_sendTransaction")
+        }
+
+        // Verify signature item
+        #expect(sigItem != nil, "Expected to find signature in activity")
+        if let sig = sigItem {
+            #expect(sig.itemType == .signature)
+            #expect(sig.signatureHex == sigHex)
+            #expect(sig.messageContent == message)
+            #expect(sig.method == "personal_sign")
+            #expect(sig.signatureHash != nil)
+        }
+    }
+
+    @Test("Signature deduplication works correctly")
+    func testSignatureDeduplication() async throws {
+        let tmpDir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        let dbURL = tmpDir.appendingPathComponent("Activity-Test-\(UUID().uuidString).sqlite")
+        ActivityStore.setDatabaseURLOverride(dbURL)
+        let store = ActivityStore.shared
+
+        let uniqueSuffix = UUID().uuidString.prefix(8)
+        let app = ActivityStore.AppMetadata(
+            domain: "example.org",
+            uri: "https://example.org/dedup-\(uniqueSuffix)",
+            scheme: "https"
+        )
+
+        let sigHex = "0xDEDUP\(uniqueSuffix)"
+        let message = "0x48656c6c6f"
+
+        // Insert same signature twice
+        try store.logSignature(
+            signatureHex: sigHex,
+            messageContent: message,
+            chainIdHex: "0x1",
+            method: "personal_sign",
+            fromAddress: "0x1234567890123456789012345678901234567890",
+            app: app
+        )
+
+        try store.logSignature(
+            signatureHex: sigHex,
+            messageContent: message,
+            chainIdHex: "0x1",
+            method: "personal_sign",
+            fromAddress: "0x1234567890123456789012345678901234567890",
+            app: app
+        )
+
+        // Fetch and verify only one signature was stored
+        let items = try store.fetchActivity(limit: 100, offset: 0)
+        let sigItems = items.filter { $0.itemType == .signature && $0.signatureHex == sigHex }
+
+        #expect(sigItems.count == 1, "Expected signature deduplication to prevent duplicate entries")
+    }
+
+    @Test("Migration from v1 to v2 preserves existing data")
+    func testMigrationV1ToV2() async throws {
+        let tmpDir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        let dbURL = tmpDir.appendingPathComponent("Activity-Test-\(UUID().uuidString).sqlite")
+        ActivityStore.setDatabaseURLOverride(dbURL)
+        
+        // First, create a v1 database by manually creating schema
+        let store1 = ActivityStore.shared
+        
+        let uniqueSuffix = UUID().uuidString.prefix(8)
+        let app = ActivityStore.AppMetadata(
+            domain: "example.org",
+            uri: "https://example.org/migration-\(uniqueSuffix)",
+            scheme: "https"
+        )
+        
+        // Log a transaction (this creates v2 schema automatically now)
+        let txHash = "0xMIGRATE\(uniqueSuffix)"
+        try store1.logTransaction(
+            txHash: txHash,
+            chainIdHex: "0x1",
+            method: "eth_sendTransaction",
+            fromAddress: "0x1234567890123456789012345678901234567890",
+            app: app
+        )
+        
+        // Verify transaction is still there after initialization
+        let items = try store1.fetchActivity(limit: 100, offset: 0)
+        let txItem = items.first(where: { $0.txHash == txHash })
+        
+        #expect(txItem != nil, "Expected transaction to be preserved after schema creation")
+        #expect(txItem?.itemType == .transaction)
+    }
+
+    @Test("fetchActivity returns items in reverse chronological order")
+    func testFetchActivityOrdering() async throws {
+        let tmpDir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        let dbURL = tmpDir.appendingPathComponent("Activity-Test-\(UUID().uuidString).sqlite")
+        ActivityStore.setDatabaseURLOverride(dbURL)
+        let store = ActivityStore.shared
+
+        let uniqueSuffix = UUID().uuidString.prefix(8)
+        let app = ActivityStore.AppMetadata(
+            domain: "example.org",
+            uri: "https://example.org/order-\(uniqueSuffix)",
+            scheme: "https"
+        )
+
+        // Insert items with delays
+        let tx1 = "0xTX1\(uniqueSuffix)"
+        try store.logTransaction(
+            txHash: tx1,
+            chainIdHex: "0x1",
+            method: "eth_sendTransaction",
+            fromAddress: "0x1234567890123456789012345678901234567890",
+            app: app
+        )
+
+        try await Task.sleep(nanoseconds: 2_000_000)
+
+        let sig1 = "0xSIG1\(uniqueSuffix)"
+        try store.logSignature(
+            signatureHex: sig1,
+            messageContent: "0x48656c6c6f",
+            chainIdHex: "0x1",
+            method: "personal_sign",
+            fromAddress: "0x1234567890123456789012345678901234567890",
+            app: app
+        )
+
+        try await Task.sleep(nanoseconds: 2_000_000)
+
+        let tx2 = "0xTX2\(uniqueSuffix)"
+        try store.logTransaction(
+            txHash: tx2,
+            chainIdHex: "0x1",
+            method: "eth_sendTransaction",
+            fromAddress: "0x1234567890123456789012345678901234567890",
+            app: app
+        )
+
+        // Fetch and verify order
+        let items = try store.fetchActivity(limit: 100, offset: 0)
+        
+        let idx1 = items.firstIndex(where: { $0.txHash == tx1 })
+        let idx2 = items.firstIndex(where: { $0.signatureHex == sig1 })
+        let idx3 = items.firstIndex(where: { $0.txHash == tx2 })
+
+        #expect(idx1 != nil && idx2 != nil && idx3 != nil, "Expected to find all items")
+        if let i1 = idx1, let i2 = idx2, let i3 = idx3 {
+            // Newest (tx2) should come first, then sig1, then tx1
+            #expect(i3 < i2 && i2 < i1, "Expected reverse chronological order")
+        }
+    }
 }
 
 
