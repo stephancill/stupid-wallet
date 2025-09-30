@@ -301,6 +301,60 @@ public final class ActivityStore {
             }
         }
     }
+    
+    /// Database inspection helper for debugging
+    /// Returns diagnostic information about the activity database
+    public struct DatabaseInfo {
+        public let schemaVersion: Int
+        public let transactionCount: Int
+        public let signatureCount: Int
+        public let appCount: Int
+        public let databasePath: String?
+        
+        public var description: String {
+            """
+            ActivityStore Database Info:
+              Schema version: \(schemaVersion)
+              Transactions: \(transactionCount)
+              Signatures: \(signatureCount)
+              Apps: \(appCount)
+              Path: \(databasePath ?? "unknown")
+            """
+        }
+    }
+    
+    public func getDatabaseInfo() throws -> DatabaseInfo {
+        return try queue.sync {
+            try openIfNeeded()
+            
+            var version: Int32 = 0
+            var stmt: OpaquePointer?
+            if sqlite3_prepare_v2(db, "PRAGMA user_version;", -1, &stmt, nil) == SQLITE_OK {
+                defer { sqlite3_finalize(stmt) }
+                if sqlite3_step(stmt) == SQLITE_ROW {
+                    version = sqlite3_column_int(stmt, 0)
+                }
+            }
+            
+            let txCount = countRows(table: "transactions") ?? 0
+            let sigCount = countRows(table: "signatures") ?? 0
+            let appCount = countRows(table: "apps") ?? 0
+            
+            // Get database path
+            var dbPath: String? = nil
+            if let pathCString = sqlite3_db_filename(db, "main") {
+                dbPath = String(cString: pathCString)
+            }
+            
+            return DatabaseInfo(
+                schemaVersion: Int(version),
+                transactionCount: txCount,
+                signatureCount: sigCount,
+                appCount: appCount,
+                databasePath: dbPath
+            )
+        }
+    }
 
     // MARK: - Private helpers
 
@@ -357,19 +411,50 @@ public final class ActivityStore {
             }
         } else if currentVersion == 1 {
             // Upgrade existing v1 DB to v2
+            // Verify existing data integrity before migration
+            if let rowCount = countRows(table: "transactions"), rowCount > 0 {
+                // Log migration attempt (best effort)
+                print("[ActivityStore] Migrating database v1→v2 with \(rowCount) existing transactions")
+            }
+            
             do {
-                try createSignaturesTable()
-                guard exec("PRAGMA user_version = 2;") else {
+                // Begin transaction for atomic migration
+                guard exec("BEGIN TRANSACTION;") else {
                     throw ActivityStoreError.schemaCreationFailed
                 }
+                
+                try createSignaturesTable()
+                
+                // Verify the new table was created successfully
+                guard tableExists("signatures") else {
+                    _ = exec("ROLLBACK;")
+                    throw ActivityStoreError.schemaCreationFailed
+                }
+                
+                guard exec("PRAGMA user_version = 2;") else {
+                    _ = exec("ROLLBACK;")
+                    throw ActivityStoreError.schemaCreationFailed
+                }
+                
+                guard exec("COMMIT;") else {
+                    _ = exec("ROLLBACK;")
+                    throw ActivityStoreError.schemaCreationFailed
+                }
+                
+                print("[ActivityStore] Migration v1→v2 completed successfully")
             } catch {
                 // Rollback on failure
+                _ = exec("ROLLBACK;")
                 _ = exec("DROP TABLE IF EXISTS signatures;")
                 _ = exec("PRAGMA user_version = 1;")
+                print("[ActivityStore] Migration failed, rolled back to v1: \(error)")
                 throw ActivityStoreError.migrationFailed
             }
+        } else if currentVersion > 2 {
+            // Future-proofing: warn if schema version is newer than expected
+            print("[ActivityStore] Warning: database schema version \(currentVersion) is newer than expected (2)")
         }
-        // If currentVersion >= 2, schema is already up to date
+        // If currentVersion == 2, schema is already up to date
     }
 
     private func createAppsTable() throws {
@@ -479,6 +564,37 @@ public final class ActivityStore {
             return false
         }
         return true
+    }
+    
+    private func tableExists(_ tableName: String) -> Bool {
+        let sql = "SELECT name FROM sqlite_master WHERE type='table' AND name=?;"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            return false
+        }
+        defer { sqlite3_finalize(stmt) }
+        
+        sqlite3_bind_text(stmt, 1, (tableName as NSString).utf8String, -1, SQLITE_TRANSIENT)
+        return sqlite3_step(stmt) == SQLITE_ROW
+    }
+    
+    private func countRows(table: String) -> Int? {
+        // Note: table name is not parameterizable in SQLite, so we validate it first
+        guard table.rangeOfCharacter(from: CharacterSet.alphanumerics.inverted) == nil else {
+            return nil // Reject non-alphanumeric table names for safety
+        }
+        
+        let sql = "SELECT COUNT(*) FROM \(table);"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            return nil
+        }
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_step(stmt) == SQLITE_ROW else {
+            return nil
+        }
+        return Int(sqlite3_column_int(stmt, 0))
     }
 
     private func stringColumn(_ stmt: OpaquePointer?, index: Int32) -> String? {

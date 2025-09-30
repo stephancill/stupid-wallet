@@ -845,18 +845,100 @@ private func truncatedHex(_ hex: String) -> String {
 - Smooth scrolling with large datasets
 - Migration preserves all existing transaction data
 
+**Implementation Notes:**
+
+1. **ActivityDetailView Enhancements:**
+
+   **Enhanced `decodePersonalMessage()` (lines 40-65):**
+
+   - Added empty content guard: returns `"(empty message)"` for safety
+   - Hex validation: checks even length and valid hex characters before decoding
+   - Lossy fallback chain: UTF-8 → ASCII → binary data indicator
+   - Graceful error messages: `"(invalid hex: ...)"` or `"(binary data, N bytes)"`
+
+   **`personalMessageView()` with large content handling (lines 241-291):**
+
+   - 10KB threshold for "large message" detection
+   - Size badge displayed in orange when content exceeds threshold
+   - ScrollView with max height (300pt) for large messages
+   - Gray background container for visual distinction
+   - Added `formatBytes()` helper for human-readable sizes (B, KB, MB)
+
+   **`typedDataMessageView()` with robustness (lines 293-394):**
+
+   - 50KB threshold for JSON payloads (higher than personal messages)
+   - ScrollView wrapper with max height (500pt) for large JSON
+   - Size badge and warning indicator for very large payloads
+   - Explicit error handling: JSON parse failures show warning icon with fallback to raw content
+   - Warning message: "Large payload - some fields may be truncated" for transparency
+
+2. **ActivityStore Migration Safety (shared/ActivityStore.swift):**
+
+   **Enhanced `createSchemaIfNeeded()` (lines 335-404):**
+
+   - Pre-migration logging: counts existing transactions before v1→v2 upgrade
+   - Atomic migration: wraps schema changes in `BEGIN TRANSACTION` / `COMMIT`
+   - Table existence verification: uses new `tableExists()` helper to verify signatures table creation
+   - Comprehensive rollback: on any failure, rolls back transaction AND drops partial tables
+   - Post-migration logging: confirms success or logs failure reason
+   - Future-proofing: warns if schema version is newer than expected (> 2)
+
+   **New helper functions (lines 515-544):**
+
+   - `tableExists(_ tableName: String) -> Bool`: queries sqlite_master for table existence
+   - `countRows(table: String) -> Int?`: returns row count with SQL injection protection (alphanumeric validation)
+   - Both helpers use proper statement cleanup with `defer { sqlite3_finalize(stmt) }`
+
+3. **Database Inspection API (shared/ActivityStore.swift):**
+
+   **`DatabaseInfo` struct (lines 307-324):**
+
+   - Public struct with schema version, counts (transactions, signatures, apps), and database path
+   - `description` computed property returns formatted multi-line string
+   - All properties are public for external inspection tools
+
+   **`getDatabaseInfo()` API (lines 326-357):**
+
+   - Thread-safe: uses `queue.sync` for database access
+   - Queries PRAGMA user_version for schema version
+   - Uses `countRows()` helper for accurate counts (handles nil gracefully with `?? 0`)
+   - Extracts database file path via `sqlite3_db_filename()` for debugging
+   - Returns structured info suitable for logging or UI display
+
+4. **Error Handling Strategy:**
+
+   - All new helpers use guard statements with early returns for safety
+   - Malformed input (empty strings, invalid hex, bad JSON) handled gracefully with user-friendly messages
+   - No exceptions thrown for display logic—fallbacks ensure content is always viewable
+   - Migration failures preserve existing data (rollback to v1 if v2 creation fails)
+
+5. **UI/UX Improvements:**
+
+   - Visual indicators for large content (orange size badges)
+   - Scrollable containers prevent layout overflow on long messages
+   - Copy functionality preserved for all content types
+   - Background colors and padding improve readability of scrollable areas
+   - Warning icons provide clear feedback when parsing fails
+
+6. **Testing Status:**
+   - ✅ Implementation complete
+   - ✅ No linter errors
+   - ✅ Build successful
+   - ✅ All Phase 4 tasks completed per spec
+   - ✅ Pull-to-refresh already implemented in Phase 3 (`ActivityView.swift` line 125: `.refreshable`)
+
 ---
 
 ### Files to Modify
 
-| File                                       | Phase | Changes                                                        |
-| ------------------------------------------ | ----- | -------------------------------------------------------------- |
-| `shared/ActivityStore.swift`               | 1     | Add `signatures` table, polymorphic model, migration, new APIs |
-| `safari/SafariWebExtensionHandler.swift`   | 2     | Thread `appMetadata`, add logging in signature handlers        |
-| `ios-wallet/ActivityViewModel.swift`       | 3     | Update API calls, filter polling by item type                  |
-| `ios-wallet/ActivityView.swift`            | 3     | Conditional row rendering, method display names                |
-| `ios-wallet/ActivityDetailView.swift`      | 3     | Conditional sections, message preview, copy buttons            |
-| `ios-walletTests/ActivityStoreTests.swift` | 1, 4  | Test unified query, migration, deduplication                   |
+| File                                       | Phase | Changes                                                                                                            |
+| ------------------------------------------ | ----- | ------------------------------------------------------------------------------------------------------------------ |
+| `shared/ActivityStore.swift`               | 1, 4  | Add `signatures` table, polymorphic model, migration, new APIs; enhanced migration safety, database inspection API |
+| `safari/SafariWebExtensionHandler.swift`   | 2     | Thread `appMetadata`, add logging in signature handlers                                                            |
+| `ios-wallet/ActivityViewModel.swift`       | 3     | Update API calls, filter polling by item type                                                                      |
+| `ios-wallet/ActivityView.swift`            | 3     | Conditional row rendering, method display names                                                                    |
+| `ios-wallet/ActivityDetailView.swift`      | 3, 4  | Conditional sections, message preview, copy buttons; enhanced error handling for large/malformed content           |
+| `ios-walletTests/ActivityStoreTests.swift` | 1, 4  | Test unified query, migration, deduplication                                                                       |
 
 ---
 

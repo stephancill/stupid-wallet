@@ -38,10 +38,27 @@ struct ActivityDetailView: View {
     }
 
     private func decodePersonalMessage(_ content: String) -> String {
+        // Guard against empty content
+        guard !content.isEmpty else { return "(empty message)" }
+        
+        // Try hex decoding
         if content.hasPrefix("0x") {
-            if let data = Data(hexString: content),
-               let text = String(data: data, encoding: .utf8) {
-                return text
+            let hexString = String(content.dropFirst(2))
+            // Validate hex string (even length, valid hex chars)
+            guard hexString.count % 2 == 0,
+                  hexString.rangeOfCharacter(from: CharacterSet(charactersIn: "0123456789abcdefABCDEF").inverted) == nil else {
+                return "(invalid hex: \(content))"
+            }
+            
+            if let data = Data(hexString: content) {
+                // Try UTF-8 decoding with lossy fallback
+                if let text = String(data: data, encoding: .utf8) {
+                    return text
+                } else if let lossyText = String(data: data, encoding: .ascii) {
+                    return lossyText + " (decoded as ASCII)"
+                } else {
+                    return "(binary data, \(data.count) bytes)"
+                }
             }
         }
         return content
@@ -223,36 +240,12 @@ struct ActivityDetailView: View {
 
     @ViewBuilder
     private func personalMessageView(content: String) -> some View {
+        let decodedMessage = decodePersonalMessage(content)
+        let contentSize = content.utf8.count
+        let isLarge = contentSize > 10_000 // 10KB threshold
+        
         VStack(alignment: .leading, spacing: 8) {
-            Button(action: {
-                UIPasteboard.general.string = content
-                didCopyMessage = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                    didCopyMessage = false
-                }
-            }) {
-                HStack {
-                    Text("Message")
-                    Spacer()
-                    Image(systemName: didCopyMessage ? "checkmark" : "doc.on.doc")
-                        .foregroundColor(.secondary)
-                }
-            }
-            .buttonStyle(.plain)
-
-            Text(decodePersonalMessage(content))
-                .font(.system(.body))
-                .foregroundColor(.primary)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    @ViewBuilder
-    private func typedDataMessageView(content: String) -> some View {
-        if let data = content.data(using: .utf8),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            VStack(alignment: .leading, spacing: 16) {
+            HStack {
                 Button(action: {
                     UIPasteboard.general.string = content
                     didCopyMessage = true
@@ -262,56 +255,141 @@ struct ActivityDetailView: View {
                 }) {
                     HStack {
                         Text("Message")
+                        if isLarge {
+                            Text("(\(formatBytes(contentSize)))")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                        }
                         Spacer()
                         Image(systemName: didCopyMessage ? "checkmark" : "doc.on.doc")
                             .foregroundColor(.secondary)
                     }
                 }
                 .buttonStyle(.plain)
-
-                // Domain section
-                if let domain = json["domain"] as? [String: Any], !domain.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Domain")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            if let name = domain["name"] as? String {
-                                domainField(label: "Name", value: name)
-                            }
-                            if let version = domain["version"] as? String {
-                                domainField(label: "Version", value: version)
-                            }
-                            if let chainId = domain["chainId"] {
-                                let chainIdStr = "\(chainId)"
-                                domainField(label: "Chain", value: chainIdStr)
-                            }
-                            if let verifyingContract = domain["verifyingContract"] as? String {
-                                domainField(label: "Verifying Contract", value: verifyingContract)
-                            }
-                        }
-                    }
-                }
-
-                // Message section
-                if let message = json["message"] as? [String: Any], !message.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Message")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(Array(message.keys.sorted()), id: \.self) { key in
-                                messageField(label: key, value: message[key])
-                            }
-                        }
-                    }
-                }
             }
+
+            // For large messages, use ScrollView with max height
+            if isLarge {
+                ScrollView {
+                    Text(decodedMessage)
+                        .font(.system(.body))
+                        .foregroundColor(.primary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 300)
+                .background(Color(.systemGray6))
+                .cornerRadius(8)
+            } else {
+                Text(decodedMessage)
+                    .font(.system(.body))
+                    .foregroundColor(.primary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func typedDataMessageView(content: String) -> some View {
+        let contentSize = content.utf8.count
+        let isLarge = contentSize > 50_000 // 50KB threshold for JSON
+        
+        if let data = content.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Button(action: {
+                        UIPasteboard.general.string = content
+                        didCopyMessage = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                            didCopyMessage = false
+                        }
+                    }) {
+                        HStack {
+                            Text("Message")
+                            if isLarge {
+                                Text("(\(formatBytes(contentSize)))")
+                                    .font(.caption)
+                                    .foregroundColor(.orange)
+                            }
+                            Spacer()
+                            Image(systemName: didCopyMessage ? "checkmark" : "doc.on.doc")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    // Domain section
+                    if let domain = json["domain"] as? [String: Any], !domain.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Domain")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                if let name = domain["name"] as? String {
+                                    domainField(label: "Name", value: name)
+                                }
+                                if let version = domain["version"] as? String {
+                                    domainField(label: "Version", value: version)
+                                }
+                                if let chainId = domain["chainId"] {
+                                    let chainIdStr = "\(chainId)"
+                                    domainField(label: "Chain", value: chainIdStr)
+                                }
+                                if let verifyingContract = domain["verifyingContract"] as? String {
+                                    domainField(label: "Verifying Contract", value: verifyingContract)
+                                }
+                            }
+                        }
+                    }
+
+                    // Message section
+                    if let message = json["message"] as? [String: Any], !message.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Message")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                ForEach(Array(message.keys.sorted()), id: \.self) { key in
+                                    messageField(label: key, value: message[key])
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Warning for very large payloads
+                    if isLarge {
+                        HStack(spacing: 8) {
+                            Image(systemName: "info.circle")
+                                .foregroundColor(.orange)
+                            Text("Large payload - some fields may be truncated")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.top, 8)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+            .frame(maxHeight: isLarge ? 500 : nil)
         } else {
-            // Fallback if JSON parsing fails
-            personalMessageView(content: content)
+            // Fallback if JSON parsing fails - show error message
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundColor(.orange)
+                    Text("Failed to parse typed data")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.bottom, 8)
+                
+                // Still allow viewing raw content
+                personalMessageView(content: content)
+            }
         }
     }
 
@@ -356,6 +434,16 @@ struct ActivityDetailView: View {
             return str
         }
         return "\(value ?? "")"
+    }
+    
+    private func formatBytes(_ bytes: Int) -> String {
+        if bytes < 1024 {
+            return "\(bytes) B"
+        } else if bytes < 1024 * 1024 {
+            return String(format: "%.1f KB", Double(bytes) / 1024.0)
+        } else {
+            return String(format: "%.1f MB", Double(bytes) / (1024.0 * 1024.0))
+        }
     }
 }
 
