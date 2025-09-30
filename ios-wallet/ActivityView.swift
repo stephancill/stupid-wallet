@@ -33,7 +33,7 @@ struct ActivityView: View {
     }
 
     var body: some View {
-        List(vm.items, id: \.txHash) { item in
+        List(vm.items, id: \.createdAt) { item in
             NavigationLink(destination: ActivityDetailView(item: item)) {
                 HStack(alignment: .center) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -48,7 +48,7 @@ struct ActivityView: View {
                                 Text("Pending")
                                 Text("•")
                                 Text(chainName(from: item.chainIdHex))
-                            } else if item.status != "confirmed" {
+                            } else if item.status != "confirmed" && item.status != nil {
                                 Image(systemName: "exclamationmark.triangle.fill")
                                     .foregroundColor(.red)
                                     .imageScale(.small)
@@ -56,7 +56,7 @@ struct ActivityView: View {
                                 Text("•")
                                 Text(chainName(from: item.chainIdHex))
                             } else {
-                                Text(truncatedHash(item.txHash))
+                                Text(truncatedHash(item.txHash ?? ""))
                                     .font(.system(.body, design: .monospaced))
                                 Text("•")
                                 Text(chainName(from: item.chainIdHex))

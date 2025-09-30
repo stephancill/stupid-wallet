@@ -595,6 +595,43 @@ private func truncatedHex(_ hex: String) -> String {
 
 **Acceptance:** `fetchActivity` returns mixed list sorted by `created_at DESC, id DESC`
 
+**Implementation Notes:**
+
+1. **Millisecond Timestamp Storage:**
+
+   - Changed `created_at` from epoch seconds to epoch milliseconds (`Int64(Date().timeIntervalSince1970 * 1000)`)
+   - **Rationale**: When items are inserted rapidly (within the same second), they would have identical `created_at` values, causing indeterminate ordering despite the secondary `id DESC` sort. Millisecond precision ensures stable ordering for rapid insertions.
+   - **Migration Impact**: This change applies to both v1 (transactions) and v2 (signatures) schemas since the migration creates fresh schemas with millisecond storage. Existing databases will have mixed precision, but new writes use milliseconds consistently.
+
+2. **UNION Query Column Alignment:**
+
+   - Both SELECT clauses must have identical column counts and types
+   - Added `t.id` and `s.id` columns to enable proper ordering across both tables
+   - **ORDER BY**: Uses column positions (10, 11) for `created_at` and `id` respectively
+   - Column layout:
+     ```
+     1:type, 2:tx_hash, 3:status, 4:sig_hash, 5:msg, 6:sig,
+     7:chain_id_hex, 8:method, 9:from_address, 10:created_at, 11:id,
+     12:domain, 13:uri, 14:scheme
+     ```
+
+3. **Data Conversion:**
+
+   - **Write**: `Int64(Date().timeIntervalSince1970 * 1000)` stores milliseconds
+   - **Read**: `Date(timeIntervalSince1970: TimeInterval(createdAtMillis) / 1000.0)` converts back
+   - Index 10 (id column) is read but not used in returned `ActivityItem`
+
+4. **Test Coverage:**
+
+   - `testSignatureLogging()`: Validates unified activity fetching with both types
+   - `testSignatureDeduplication()`: Verifies SHA-256 hash uniqueness prevents duplicates
+   - `testMigrationV1ToV2()`: Confirms schema upgrade preserves data
+   - `testFetchActivityOrdering()`: Critical test for reverse chronological order with rapid insertions (2ms delays)
+   - `testInsertAndFetchOrdering()`: Validates ordering stability for transaction-only data
+
+5. **Schema Comments:**
+   - Added `-- epoch milliseconds` inline comments to both `transactions.created_at` and `signatures.created_at` columns for future reference
+
 ---
 
 #### **Phase 2: Extension Integration**

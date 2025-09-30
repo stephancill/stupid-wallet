@@ -20,12 +20,13 @@ struct ActivityDetailView: View {
     }
 
     private func openExplorer() {
-        let preferred = URL(string: "https://blockscan.com/tx/\(item.txHash)")
+        guard let txHash = item.txHash else { return }
+        let preferred = URL(string: "https://blockscan.com/tx/\(txHash)")
         if let url = preferred {
             UIApplication.shared.open(url, options: [:]) { success in
                 if !success {
                     // Fallback to a more universal explorer (etherscan mainnet); still a useful link
-                    if let fallback = URL(string: "https://etherscan.io/tx/\(item.txHash)") {
+                    if let fallback = URL(string: "https://etherscan.io/tx/\(txHash)") {
                         UIApplication.shared.open(fallback)
                     }
                 }
@@ -47,7 +48,7 @@ struct ActivityDetailView: View {
                         Text("Hash")
                         Spacer()
                         HStack(spacing: 6) {
-                            Text(item.txHash)
+                            Text(item.txHash ?? "")
                                 .font(.system(.body, design: .monospaced))
                                 .foregroundColor(.secondary)
                                 .lineLimit(1)
@@ -62,7 +63,7 @@ struct ActivityDetailView: View {
                 HStack {
                     Text("Status")
                     Spacer()
-                    Text(item.status.capitalized)
+                    Text((item.status ?? "pending").capitalized)
                         .foregroundColor(.secondary)
                 }
 
@@ -98,7 +99,16 @@ struct ActivityDetailView: View {
 
 #Preview {
     let app = ActivityStore.AppMetadata(domain: "app.example", uri: nil, scheme: nil)
-    let item = ActivityStore.ActivityItem(txHash: "0x1234567890abcdef", app: app, chainIdHex: "0x1", method: "eth_sendTransaction", fromAddress: nil, createdAt: Date(), status: "pending")
+    let item = ActivityStore.ActivityItem(
+        itemType: .transaction,
+        txHash: "0x1234567890abcdef",
+        status: "pending",
+        app: app,
+        chainIdHex: "0x1",
+        method: "eth_sendTransaction",
+        fromAddress: nil,
+        createdAt: Date()
+    )
     return NavigationView { ActivityDetailView(item: item) }
 }
 

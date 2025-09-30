@@ -43,7 +43,7 @@ final class ActivityViewModel: ObservableObject {
         guard canLoadMore, !isLoading, !isLoadingMore else { return }
         let thresholdIndex = items.index(items.endIndex, offsetBy: -5, limitedBy: items.startIndex) ?? items.startIndex
         // If the current item is within the last few, trigger load more
-        if let idx = items.firstIndex(where: { $0.txHash == item.txHash }), idx >= thresholdIndex {
+        if let idx = items.firstIndex(where: { $0.createdAt == item.createdAt }), idx >= thresholdIndex {
             fetchNextPage()
         }
     }
@@ -100,13 +100,17 @@ final class ActivityViewModel: ObservableObject {
             let old = items[idx]
             if old.status != newStatus {
                 let updated = ActivityStore.ActivityItem(
+                    itemType: old.itemType,
                     txHash: old.txHash,
+                    status: newStatus,
+                    signatureHash: old.signatureHash,
+                    messageContent: old.messageContent,
+                    signatureHex: old.signatureHex,
                     app: old.app,
                     chainIdHex: old.chainIdHex,
                     method: old.method,
                     fromAddress: old.fromAddress,
-                    createdAt: old.createdAt,
-                    status: newStatus
+                    createdAt: old.createdAt
                 )
                 items[idx] = updated
             }
@@ -116,7 +120,7 @@ final class ActivityViewModel: ObservableObject {
     private func pollPendingOnce() async {
         // Take a snapshot to avoid races with UI updates
         let snapshot = await MainActor.run { items }
-        let pending = snapshot.filter { $0.status == "pending" }
+        let pending = snapshot.filter { $0.itemType == .transaction && $0.status == "pending" }
         guard !pending.isEmpty else { return }
 
         // Group by chain for RPC URL selection
@@ -130,14 +134,15 @@ final class ActivityViewModel: ObservableObject {
                     group.addTask { [weak self] in
                         await semaphore.wait()
                         guard let self = self else { await semaphore.signal(); return }
+                        guard let txHash = item.txHash else { await semaphore.signal(); return }
                         do {
-                            let newStatus = try await self.checkReceiptStatus(txHash: item.txHash, chainIdHex: item.chainIdHex)
+                            let newStatus = try await self.checkReceiptStatus(txHash: txHash, chainIdHex: item.chainIdHex)
                             if newStatus != "pending" {
                                 // Persist and update UI
-                                try? ActivityStore.shared.updateTransactionStatus(txHash: item.txHash, status: newStatus)
+                                try? ActivityStore.shared.updateTransactionStatus(txHash: txHash, status: newStatus)
                             }
                             await MainActor.run {
-                                self.updateItemStatus(txHash: item.txHash, newStatus: newStatus)
+                                self.updateItemStatus(txHash: txHash, newStatus: newStatus)
                             }
                         } catch {
                             // On transient errors, keep pending
