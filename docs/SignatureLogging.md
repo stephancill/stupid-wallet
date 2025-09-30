@@ -658,6 +658,56 @@ private func truncatedHex(_ hex: String) -> String {
 
 **Acceptance:** All three signature methods log activity rows with correct app metadata
 
+**Implementation Notes:**
+
+1. **Method Signature Updates:**
+
+   - `handlePersonalSign` (line 343): Added `appMetadata: AppMetadata` parameter
+   - `handleSignTypedDataV4` (line 433): Added `appMetadata: AppMetadata` parameter
+   - Call sites updated in `handleWalletRequest` (lines 144, 147) to pass `appMetadata`
+
+2. **Logging Implementation:**
+
+   **`handlePersonalSign` (lines 408-425):**
+
+   - Logs immediately after signature generation (after line 406)
+   - Stores raw hex message content (`messageHex`) from params
+   - Uses `Constants.Networks.getCurrentChainIdHex()` for chain ID
+   - Creates `ActivityStore.AppMetadata` from passed `appMetadata`
+   - Wrapped in `do-catch` block; errors ignored silently
+
+   **`handleSignTypedDataV4` (lines 477-494):**
+
+   - Logs immediately after signature generation (after line 475)
+   - Stores full JSON typed data content (`typedDataJSON`) for transparency
+   - Uses `Constants.Networks.getCurrentChainIdHex()` for chain ID
+   - Wrapped in `do-catch` block; errors ignored silently
+
+   **`handleWalletConnect` → SIWE (lines 287-307):**
+
+   - Logs after successful SIWE result extraction
+   - Extracts `signature` and `message` from `siweResult` dictionary
+   - Stores formatted SIWE message (not hex-encoded)
+   - Uses first chain ID from `supportedChainIds` array, falls back to `"0x1"`
+   - Nested `do-catch` block to handle optional extraction gracefully
+
+3. **Error Handling:**
+
+   - All logging code wrapped in `do-catch` with `// Ignore logging failures` comment
+   - RPC responses always returned normally regardless of logging success/failure
+   - No changes to existing error paths or response structures
+
+4. **Consistency:**
+
+   - All three methods use identical pattern: create `ActivityStore.AppMetadata`, call `logSignature`, catch and ignore errors
+   - SHA-256 signature hash computation handled by `ActivityStore.logSignature` (not in handler)
+   - All `fromAddress` parameters pass through saved address without transformation
+
+5. **Testing Status:**
+   - ✅ Implementation complete
+   - ✅ No linter errors
+   - ✅ Manual testing confirmed working by user
+
 ---
 
 #### **Phase 3: iOS UI Updates**
