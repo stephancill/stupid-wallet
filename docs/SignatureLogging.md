@@ -597,11 +597,11 @@ private func truncatedHex(_ hex: String) -> String {
 
 **Implementation Notes:**
 
-1. **Millisecond Timestamp Storage:**
+1. **Timestamp Storage:**
 
-   - Changed `created_at` from epoch seconds to epoch milliseconds (`Int64(Date().timeIntervalSince1970 * 1000)`)
-   - **Rationale**: When items are inserted rapidly (within the same second), they would have identical `created_at` values, causing indeterminate ordering despite the secondary `id DESC` sort. Millisecond precision ensures stable ordering for rapid insertions.
-   - **Migration Impact**: This change applies to both v1 (transactions) and v2 (signatures) schemas since the migration creates fresh schemas with millisecond storage. Existing databases will have mixed precision, but new writes use milliseconds consistently.
+   - Stores `created_at` as epoch seconds (`Int64(Date().timeIntervalSince1970)`)
+   - Secondary `id DESC` sort ensures stable ordering for items created in the same second
+   - **Migration compatibility**: Kept as epoch seconds for backward compatibility with v1 transaction data
 
 2. **UNION Query Column Alignment:**
 
@@ -617,8 +617,8 @@ private func truncatedHex(_ hex: String) -> String {
 
 3. **Data Conversion:**
 
-   - **Write**: `Int64(Date().timeIntervalSince1970 * 1000)` stores milliseconds
-   - **Read**: `Date(timeIntervalSince1970: TimeInterval(createdAtMillis) / 1000.0)` converts back
+   - **Write**: `Int64(Date().timeIntervalSince1970)` stores epoch seconds
+   - **Read**: `Date(timeIntervalSince1970: TimeInterval(createdAtSeconds))` converts back
    - Index 10 (id column) is read but not used in returned `ActivityItem`
 
 4. **Test Coverage:**
@@ -626,11 +626,11 @@ private func truncatedHex(_ hex: String) -> String {
    - `testSignatureLogging()`: Validates unified activity fetching with both types
    - `testSignatureDeduplication()`: Verifies SHA-256 hash uniqueness prevents duplicates
    - `testMigrationV1ToV2()`: Confirms schema upgrade preserves data
-   - `testFetchActivityOrdering()`: Critical test for reverse chronological order with rapid insertions (2ms delays)
-   - `testInsertAndFetchOrdering()`: Validates ordering stability for transaction-only data
+   - `testFetchActivityOrdering()`: Critical test for reverse chronological order with 1-second delays (ensures different epoch second timestamps)
+   - `testInsertAndFetchOrdering()`: Validates ordering stability for transaction-only data with 2ms delays
 
 5. **Schema Comments:**
-   - Added `-- epoch milliseconds` inline comments to both `transactions.created_at` and `signatures.created_at` columns for future reference
+   - Added `-- epoch seconds` inline comments to both `transactions.created_at` and `signatures.created_at` columns for consistency
 
 ---
 

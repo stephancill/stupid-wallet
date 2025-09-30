@@ -304,7 +304,7 @@ struct ActivityStoreTests {
             scheme: "https"
         )
 
-        // Insert items with delays
+        // Insert items with 1-second delays to ensure different epoch second timestamps
         let tx1 = "0xTX1\(uniqueSuffix)"
         try store.logTransaction(
             txHash: tx1,
@@ -314,7 +314,7 @@ struct ActivityStoreTests {
             app: app
         )
 
-        try await Task.sleep(nanoseconds: 2_000_000)
+        try await Task.sleep(nanoseconds: 1_100_000_000) // 1.1 seconds to ensure new timestamp
 
         let sig1 = "0xSIG1\(uniqueSuffix)"
         try store.logSignature(
@@ -326,7 +326,7 @@ struct ActivityStoreTests {
             app: app
         )
 
-        try await Task.sleep(nanoseconds: 2_000_000)
+        try await Task.sleep(nanoseconds: 1_100_000_000) // 1.1 seconds to ensure new timestamp
 
         let tx2 = "0xTX2\(uniqueSuffix)"
         try store.logTransaction(

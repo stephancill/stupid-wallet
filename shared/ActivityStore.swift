@@ -146,7 +146,7 @@ public final class ActivityStore {
             } else {
                 sqlite3_bind_null(stmt, 5)
             }
-            let now = Int64(Date().timeIntervalSince1970 * 1000) // Store as milliseconds
+            let now = Int64(Date().timeIntervalSince1970) // Store as epoch seconds
             sqlite3_bind_int64(stmt, 6, now)
 
             guard sqlite3_step(stmt) == SQLITE_DONE else {
@@ -194,7 +194,7 @@ public final class ActivityStore {
             }
             sqlite3_bind_text(stmt, 6, (messageContent as NSString).utf8String, -1, SQLITE_TRANSIENT)
             sqlite3_bind_text(stmt, 7, (signatureHex as NSString).utf8String, -1, SQLITE_TRANSIENT)
-            let now = Int64(Date().timeIntervalSince1970 * 1000) // Store as milliseconds
+            let now = Int64(Date().timeIntervalSince1970) // Store as epoch seconds
             sqlite3_bind_int64(stmt, 8, now)
 
             guard sqlite3_step(stmt) == SQLITE_DONE else {
@@ -250,7 +250,7 @@ public final class ActivityStore {
                 let chainIdHex = stringColumn(stmt, index: 6) ?? "0x1"
                 let method = stringColumn(stmt, index: 7)
                 let fromAddress = stringColumn(stmt, index: 8)
-                let createdAtMillis = sqlite3_column_int64(stmt, 9)
+                let createdAtSeconds = sqlite3_column_int64(stmt, 9)
                 // index 10 is the id (used for sorting, not returned)
                 let domain = stringColumn(stmt, index: 11)
                 let uri = stringColumn(stmt, index: 12)
@@ -268,7 +268,7 @@ public final class ActivityStore {
                     chainIdHex: chainIdHex,
                     method: method,
                     fromAddress: fromAddress,
-                    createdAt: Date(timeIntervalSince1970: TimeInterval(createdAtMillis) / 1000.0) // Convert from milliseconds
+                    createdAt: Date(timeIntervalSince1970: TimeInterval(createdAtSeconds))
                 )
                 items.append(item)
             }
@@ -481,7 +481,7 @@ public final class ActivityStore {
           chain_id_hex TEXT NOT NULL,
           method TEXT,
           from_address TEXT,
-          created_at INTEGER NOT NULL,  -- epoch milliseconds
+          created_at INTEGER NOT NULL,  -- epoch seconds
           status TEXT NOT NULL DEFAULT 'pending',
           FOREIGN KEY(app_id) REFERENCES apps(id)
         );
@@ -504,7 +504,7 @@ public final class ActivityStore {
           from_address TEXT,
           message_content TEXT NOT NULL,
           signature_hex TEXT NOT NULL,
-          created_at INTEGER NOT NULL,  -- epoch milliseconds
+          created_at INTEGER NOT NULL,  -- epoch seconds
           FOREIGN KEY(app_id) REFERENCES apps(id)
         );
         CREATE INDEX IF NOT EXISTS idx_signatures_created_at ON signatures(created_at DESC, id DESC);
