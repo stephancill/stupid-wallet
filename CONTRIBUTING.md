@@ -108,6 +108,8 @@ Thank you for your interest in contributing! This project is a stupid wallet app
 
 The Activity View and SQLite-backed Activity Log (including schema, storage, and extension integration points) are specified in `docs/ActivityLog.md`.
 
+**Signature Logging**: The Activity Log also captures message signatures (`personal_sign`, `eth_signTypedData_v4`, and SIWE via `wallet_connect`) alongside transactions. See `docs/SignatureLogging.md` for the signature logging implementation specification (Phases 1-4 complete).
+
 ### Prerequisites
 
 - Xcode 15+

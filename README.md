@@ -25,7 +25,14 @@ An iOS/macOS SwiftUI wallet app bundled with a Safari Web Extension that injects
 
 ### Activity Log
 
-See `docs/ActivityLog.md` for the Activity View and SQLite-backed Activity Log design.
+The wallet includes a comprehensive Activity Log that tracks both transactions and signatures:
+
+- **Transactions**: Records all broadcasted transactions (`eth_sendTransaction`, `wallet_sendCalls`) with status polling
+- **Signatures**: Logs message signatures (`personal_sign`, `eth_signTypedData_v4`) and SIWE authentication
+- **Storage**: SQLite database in shared App Group container with schema versioning and migration support
+- **UI**: Unified reverse-chronological view with detailed inspection, copy functionality, and large content handling
+
+See `docs/ActivityLog.md` for transaction logging design and `docs/SignatureLogging.md` for signature logging specification.
 
 ## Contributing
 

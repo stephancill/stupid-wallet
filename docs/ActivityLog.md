@@ -357,6 +357,28 @@ Phase 6 — Tests and CI
 - Optional: lightweight integration test to simulate polling logic with mocked RPCs.
 - Add a brief note in README on how to run tests.
 
-Future work:
+---
 
-- Log message signatures too
+### Signature Logging (Implemented)
+
+**Status**: ✅ Complete (Phases 1-4)
+
+The Activity Log has been extended to capture message signatures alongside transactions. See `docs/SignatureLogging.md` for the complete specification and implementation notes.
+
+**Summary**:
+
+- **Schema v2**: Added `signatures` table with full message content, signature hex, and SHA-256 deduplication
+- **Polymorphic model**: `ActivityItem` supports both transaction and signature types
+- **Logged methods**:
+  - `personal_sign` (EIP-191 personal messages)
+  - `eth_signTypedData_v4` (EIP-712 typed data)
+  - `wallet_connect_siwe` (Sign-In with Ethereum)
+- **UI enhancements**:
+  - Unified activity list showing both transactions and signatures
+  - Structured message display with domain/message sections for typed data
+  - Large content handling (10KB+ messages with scrollable views)
+  - Robust error handling for malformed hex/JSON
+- **Migration**: Atomic v1→v2 upgrades with rollback on failure
+- **Debugging**: `getDatabaseInfo()` API for inspecting schema version and counts
+
+All signature methods log activity with the same app metadata and chain context as transactions.
