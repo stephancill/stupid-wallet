@@ -426,12 +426,12 @@ enum AuthorizationsUtil {
 
     /// Get transaction receipt using direct RPC call
     static func getTransactionReceipt(txHash: String, rpcURL: URL, timeout: TimeInterval = 30.0) async throws -> [String: Any]? {
-        let result: Any? = try await JSONRPC.request(rpcURL: rpcURL, method: "eth_getTransactionReceipt", params: [txHash], timeout: timeout)
+        let result: Any = try await JSONRPC.request(rpcURL: rpcURL, method: "eth_getTransactionReceipt", params: [txHash], timeout: timeout)
 
         // Handle null result (transaction not found yet)
         if let resultDict = result as? [String: Any] {
             return resultDict
-        } else if result == nil {
+        } else if result is NSNull {
             return nil
         } else {
             throw NSError(domain: "RPC", code: 6, userInfo: [NSLocalizedDescriptionKey: "Unexpected response type for eth_getTransactionReceipt"])

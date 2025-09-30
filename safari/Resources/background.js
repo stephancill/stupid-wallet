@@ -146,7 +146,7 @@ async function handleWalletRequest(message, sender, sendResponse) {
           params,
           siteMetadata,
         });
-        if (native && native.result)
+        if (native && "result" in native)
           return sendResponse({ result: native.result });
         if (native && native.error)
           return sendResponse({ error: native.error });
@@ -159,7 +159,7 @@ async function handleWalletRequest(message, sender, sendResponse) {
           params,
           siteMetadata,
         });
-        if (native && native.result)
+        if (native && "result" in native)
           return sendResponse({ result: native.result });
         if (native && native.error)
           return sendResponse({ error: native.error });
@@ -168,6 +168,8 @@ async function handleWalletRequest(message, sender, sendResponse) {
       case "eth_chainId":
       case "eth_blockNumber":
       case "eth_getTransactionByHash":
+      case "eth_getTransactionReceipt":
+      case "eth_getBlockByNumber":
       case "wallet_addEthereumChain":
       case "wallet_getCapabilities":
       case "wallet_getCallsStatus":
@@ -177,7 +179,7 @@ async function handleWalletRequest(message, sender, sendResponse) {
           params,
           siteMetadata,
         });
-        if (native && native.result)
+        if (native && "result" in native)
           return sendResponse({ result: native.result });
         if (native && native.error)
           return sendResponse({ error: native.error });
@@ -191,7 +193,7 @@ async function handleWalletRequest(message, sender, sendResponse) {
           siteMetadata,
         });
         await persistDisconnect(siteMetadata);
-        if (native && native.result)
+        if (native && "result" in native)
           return sendResponse({ result: native.result });
         if (native && native.error)
           return sendResponse({ error: native.error });
@@ -206,7 +208,7 @@ async function handleWalletRequest(message, sender, sendResponse) {
             params,
             siteMetadata,
           });
-          if (native && native.result)
+          if (native && "result" in native)
             return sendResponse({ result: native.result });
           if (native && native.error)
             return sendResponse({ error: native.error });
@@ -227,7 +229,7 @@ async function handleWalletRequest(message, sender, sendResponse) {
             params,
             siteMetadata,
           });
-          if (native && native.result)
+          if (native && "result" in native)
             return sendResponse({ result: native.result });
           if (native && native.error)
             return sendResponse({ error: native.error });
@@ -286,7 +288,7 @@ async function handleWalletConfirm(message, sendResponse) {
       params,
       siteMetadata,
     });
-    if (native && native.result) {
+    if (native && "result" in native) {
       // Persist connection for connect methods
       if (method === "eth_requestAccounts" || method === "wallet_connect") {
         await persistConnect(siteMetadata);

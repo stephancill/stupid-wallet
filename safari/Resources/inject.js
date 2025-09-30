@@ -58,6 +58,8 @@
 
         case "eth_blockNumber":
         case "eth_getTransactionByHash":
+        case "eth_getTransactionReceipt":
+        case "eth_getBlockByNumber":
         case "wallet_addEthereumChain":
         case "wallet_getCapabilities":
         case "eth_signTypedData_v4":
@@ -67,7 +69,6 @@
         case "wallet_getCallsStatus":
           return this._handleRequest({ method, params });
 
-        case "eth_getBlockByNumber":
         case "eth_getBalance":
         case "eth_signTransaction":
         case "eth_sign":

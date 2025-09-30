@@ -20,6 +20,7 @@ Thank you for your interest in contributing! This project is a stupid wallet app
     - EIP-1193 provider with supported methods:
       - `eth_requestAccounts`, `eth_accounts`
       - `eth_chainId`, `eth_blockNumber`
+      - `eth_getTransactionByHash`, `eth_getTransactionReceipt`, `eth_getBlockByNumber`
       - `wallet_addEthereumChain`, `wallet_switchEthereumChain`
       - `personal_sign`, `eth_signTypedData_v4`
       - `eth_sendTransaction`
@@ -41,6 +42,7 @@ Thank you for your interest in contributing! This project is a stupid wallet app
   - **Native handler (Swift)**: `safari/SafariWebExtensionHandler.swift`
     - Implements:
       - Accounts and network: `eth_requestAccounts`, `eth_accounts`, `eth_chainId`, `eth_blockNumber`.
+      - Transaction and block queries: `eth_getTransactionByHash`, `eth_getTransactionReceipt`, `eth_getBlockByNumber` — direct RPC passthrough that preserves null responses.
       - Chains: `wallet_addEthereumChain` (persists metadata under `customChains`), `wallet_switchEthereumChain` (updates `chainId`).
       - Signing: `personal_sign` (EIP-191), `eth_signTypedData_v4` (EIP-712) — uses Dawn Key Management to sign digests without exporting keys.
       - Transactions: `eth_sendTransaction` — builds legacy or EIP-1559 transactions, signs, and broadcasts via Web3.swift.
@@ -227,7 +229,7 @@ xcodebuild -scheme ios-wallet -configuration Debug -destination 'generic/platfor
 - **Request Flow Patterns:**
   - **Fast Methods**: Direct native handler execution (accounts, chain info, chain switching, disconnect)
   - **Confirmation Methods**: Pending → user approval → native handler execution (connect, signing, transactions)
-- Supported today: `eth_requestAccounts`, `eth_accounts`, `eth_chainId`, `eth_blockNumber`, `wallet_addEthereumChain`, `wallet_switchEthereumChain`, `wallet_connect`, `wallet_disconnect`, `personal_sign`, `eth_signTypedData_v4`, `eth_sendTransaction`.
+- Supported today: `eth_requestAccounts`, `eth_accounts`, `eth_chainId`, `eth_blockNumber`, `eth_getTransactionByHash`, `eth_getTransactionReceipt`, `eth_getBlockByNumber`, `wallet_addEthereumChain`, `wallet_switchEthereumChain`, `wallet_connect`, `wallet_disconnect`, `personal_sign`, `eth_signTypedData_v4`, `eth_sendTransaction`.
 - All methods support automatic site metadata extraction (domain, URI, scheme) for proper SIWE message generation.
 - Never log sensitive data (private keys, seeds, decrypted material).
 

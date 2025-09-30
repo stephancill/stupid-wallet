@@ -139,6 +139,12 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     case "eth_getTransactionByHash":
       let params = messageDict["params"] as? [Any]
       return await handleGetTransactionByHash(params: params)
+    case "eth_getTransactionReceipt":
+      let params = messageDict["params"] as? [Any]
+      return await handleGetTransactionReceipt(params: params)
+    case "eth_getBlockByNumber":
+      let params = messageDict["params"] as? [Any]
+      return await handleGetBlockByNumber(params: params)
     case "personal_sign":
       let params = messageDict["params"] as? [Any]
       return handlePersonalSign(params: params, appMetadata: appMetadata)
@@ -218,14 +224,72 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     }
     do {
       // Use shared JSONRPC utility to query node directly, preserve null when not found
-      let result: Any? = try await JSONRPC.request(
+      let result: Any = try await JSONRPC.request(
         rpcURL: url, method: "eth_getTransactionByHash", params: [hash])
       if let dict = result as? [String: Any] {
         return ["result": dict]
-      } else if result == nil {
+      } else if result is NSNull {
         return ["result": NSNull()]  // EIP-1193/JSON-RPC returns null when not found
       } else {
         return ["error": "Unexpected response type for eth_getTransactionByHash"]
+      }
+    } catch {
+      return ["error": error.localizedDescription]
+    }
+  }
+
+  private func handleGetTransactionReceipt(params: [Any]?) async -> [String: Any] {
+    guard let params = params, let hash = params.first as? String, !hash.isEmpty else {
+      return ["error": "Invalid eth_getTransactionReceipt params"]
+    }
+    let (rpcURL, _) = Constants.Networks.currentNetwork()
+    guard let url = URL(string: rpcURL) else {
+      return ["error": "Invalid RPC URL"]
+    }
+    do {
+      // Use shared JSONRPC utility to query node directly, preserve null when not found
+      let result: Any = try await JSONRPC.request(
+        rpcURL: url, method: "eth_getTransactionReceipt", params: [hash])
+      if let dict = result as? [String: Any] {
+        return ["result": dict]
+      } else if result is NSNull {
+        return ["result": NSNull()]  // EIP-1193/JSON-RPC returns null when not found
+      } else {
+        return ["error": "Unexpected response type for eth_getTransactionReceipt"]
+      }
+    } catch {
+      return ["error": error.localizedDescription]
+    }
+  }
+
+  private func handleGetBlockByNumber(params: [Any]?) async -> [String: Any] {
+    guard let params = params, params.count >= 1 else {
+      return ["error": "Invalid eth_getBlockByNumber params"]
+    }
+    
+    // First param is block number (string like "latest", "earliest", "pending", or hex number)
+    // Second param is boolean for full transaction objects (optional, defaults to false)
+    guard let blockParam = params[0] as? String else {
+      return ["error": "Block parameter must be a string"]
+    }
+    
+    let fullTransactions = (params.count >= 2) ? (params[1] as? Bool ?? false) : false
+    
+    let (rpcURL, _) = Constants.Networks.currentNetwork()
+    guard let url = URL(string: rpcURL) else {
+      return ["error": "Invalid RPC URL"]
+    }
+    
+    do {
+      // Pass both parameters to the RPC
+      let result: Any = try await JSONRPC.request(
+        rpcURL: url, method: "eth_getBlockByNumber", params: [blockParam, fullTransactions])
+      if let dict = result as? [String: Any] {
+        return ["result": dict]
+      } else if result is NSNull {
+        return ["result": NSNull()]  // Block not found
+      } else {
+        return ["error": "Unexpected response type for eth_getBlockByNumber"]
       }
     } catch {
       return ["error": error.localizedDescription]

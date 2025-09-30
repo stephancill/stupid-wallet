@@ -14,6 +14,8 @@ export const FAST_METHODS = [
   "eth_chainId",
   "eth_blockNumber",
   "eth_getTransactionByHash",
+  "eth_getTransactionReceipt",
+  "eth_getBlockByNumber",
   "wallet_addEthereumChain",
   "wallet_switchEthereumChain",
   "wallet_disconnect",
