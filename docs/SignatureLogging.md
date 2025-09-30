@@ -748,6 +748,78 @@ private func truncatedHex(_ hex: String) -> String {
 - Copy buttons work for message and signature hex
 - Message content displays formatted (UTF-8 for personal_sign, pretty JSON for typed data)
 
+**Implementation Notes:**
+
+1. **ActivityViewModel Changes:**
+
+   - Updated `loadLatest()` to call `fetchActivity()` instead of `fetchTransactions()` (line 23)
+   - Updated `fetchNextPage()` to call `fetchActivity()` instead of `fetchTransactions()` (line 59)
+   - `pollPendingOnce()` already correctly filters only `.transaction` items with `status == "pending"` (line 123)
+
+2. **ActivityView Changes:**
+
+   - Added `methodDisplayName(_ method: String)` helper (lines 35-42) for simple labels:
+     - `"personal_sign"` → `"Message"`
+     - `"eth_signTypedData_v4"` → `"Typed Data"`
+     - `"wallet_connect_siwe"` → `"Sign-In"`
+   - Updated list row rendering with `switch item.itemType` (lines 53-78):
+     - Transactions: Show "Transaction" label for confirmed, "Pending"/"Failed" with icons for other states
+     - Signatures: Show "Signature" label
+   - Empty state already shows "No activity yet" (line 85)
+
+3. **ActivityDetailView Changes:**
+
+   - Added state variables (lines 14-17):
+     - `@State private var didCopyHash: Bool = false`
+     - `@State private var didCopyMessage: Bool = false`
+     - `@State private var didCopySignature: Bool = false`
+     - Removed `showFullMessage` (not needed with new rendering approach)
+   - Implemented conditional rendering in `body` based on `item.itemType` (lines 84-89)
+   - Implemented `transactionSections()` (lines 95-152) with existing transaction UI
+   - Implemented `signatureSections()` (lines 154-219) with:
+     - Message content (structured rendering based on method)
+     - Hash (copyable, truncated display)
+     - Signature hex (copyable, truncated display)
+     - Verification section (from address, network, timestamp)
+
+4. **Enhanced Message Rendering:**
+
+   - **Smart routing** via `messageContentView()` (lines 221-230) that detects method type
+   - **Personal message display** via `personalMessageView()` (lines 233-258):
+     - Decodes hex to UTF-8 string
+     - Shows as clean readable text
+     - Copyable via button in header
+     - No "Show More" button needed - naturally wraps
+   - **Typed data display** via `typedDataMessageView()` (lines 260-325):
+     - Parses EIP-712 JSON structure
+     - **Domain section** with Name, Version, Chain, Verifying Contract
+     - **Message section** with all fields from `message` object
+     - Fields shown with UPPERCASE labels and type-aware formatting
+     - Monospaced font for hex addresses
+     - All values text-selectable for easy copying
+     - Falls back to personal message view if JSON parsing fails
+   - **Helper functions**:
+     - `domainField(label:value:)` (lines 327-338) - renders domain fields with uppercase labels
+     - `messageField(label:value:)` (lines 340-351) - renders message fields with uppercase labels
+     - `formatValue(_:)` (lines 353-368) - formats Any values as strings (handles strings, numbers, objects, arrays)
+     - `decodePersonalMessage(_:)` (lines 49-56) - decodes hex to UTF-8
+     - `truncatedHex(_:)` (lines 74-79) - truncates long hex strings to `0xABCDEF…123456`
+
+5. **UX Improvements:**
+
+   - Removed confusing "Show More/Less" button for typed data (structured view is cleaner)
+   - Added `.textSelection(.enabled)` to all value fields for easy copying
+   - Consistent copy button pattern across all copyable fields
+   - Visual feedback (checkmark icon) when copying succeeds
+   - Method field removed from signature detail view (redundant with section title)
+   - Hash positioned above Signature for logical grouping
+
+6. **Testing Status:**
+   - ✅ Implementation complete
+   - ✅ No linter errors
+   - ✅ Build successful
+   - ✅ UI mirrors web modal patterns (SignMessageModal.tsx, SignTypedDataModal.tsx)
+
 ---
 
 #### **Phase 4: Polish & Edge Cases**

@@ -20,7 +20,7 @@ final class ActivityViewModel: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async {
             let result: [ActivityStore.ActivityItem]
             do {
-                result = try ActivityStore.shared.fetchTransactions(limit: l, offset: offset)
+                result = try ActivityStore.shared.fetchActivity(limit: l, offset: offset)
             } catch {
                 result = []
             }
@@ -56,7 +56,7 @@ final class ActivityViewModel: ObservableObject {
         let l = pageSize
         DispatchQueue.global(qos: .userInitiated).async {
             do {
-                let result = try ActivityStore.shared.fetchTransactions(limit: l, offset: offset)
+                let result = try ActivityStore.shared.fetchActivity(limit: l, offset: offset)
                 DispatchQueue.main.async {
                     self.items.append(contentsOf: result)
                     self.canLoadMore = result.count == l
