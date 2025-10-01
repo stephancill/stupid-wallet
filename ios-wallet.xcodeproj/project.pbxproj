@@ -582,7 +582,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "stupid-wallet-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "stupid wallet (dev)";
+				INFOPLIST_KEY_CFBundleDisplayName = "stupid wallet";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Used to authorize transactions and message signatures.";
