@@ -67,6 +67,7 @@ struct ConnectedAppDetailView: View {
     let domain: String
     @State private var site: ConnectedSite?
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         Form {
@@ -84,6 +85,15 @@ struct ConnectedAppDetailView: View {
                         Text(formatExact(site.connectedAt))
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.trailing)
+                    }
+                }
+
+                Section {
+                    Button(action: openApp) {
+                        HStack {
+                            Image(systemName: "arrow.up.forward.square")
+                            Text("Open App")
+                        }
                     }
                 }
 
@@ -109,6 +119,11 @@ struct ConnectedAppDetailView: View {
 
     private func load() {
         self.site = ConnectedSitesStore.load(domain: domain)
+    }
+
+    private func openApp() {
+        guard let url = URL(string: "https://\(domain)") else { return }
+        openURL(url)
     }
 
     private func disconnect() {
