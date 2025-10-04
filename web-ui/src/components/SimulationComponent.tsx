@@ -1,24 +1,27 @@
+import { Address } from "@/components/Address";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useQuery } from "@tanstack/react-query";
+import { RPC_URLS } from "@/lib/constants";
+import {
+  loadContractABI,
+  loadContractMetadata,
+  type ContractMetadata,
+} from "@/lib/contract-utils";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import {
   createPublicClient,
-  formatEther,
+  decodeErrorResult,
+  decodeEventLog,
+  erc1155Abi,
+  erc20Abi,
+  erc721Abi,
+  formatUnits,
   hexToBigInt,
   http,
   isHex,
   SimulateCallsReturnType,
-  decodeEventLog,
-  decodeErrorResult,
-  erc20Abi,
-  erc1155Abi,
-  erc721Abi,
-  parseEther,
 } from "viem";
-import { whatsabi } from "@shazow/whatsabi";
 import * as chains from "viem/chains";
-import { RPC_URLS } from "@/lib/constants";
-import { Address } from "@/components/Address";
-import { useState, useMemo } from "react";
 
 // Transaction types
 interface BaseTransaction {
@@ -40,11 +43,56 @@ interface SimulationComponentProps {
   chain: chains.Chain | undefined;
 }
 
+/**
+ * Helper function to fetch contract ABI using React Query's cache
+ * This can be called imperatively inside queryFn while still leveraging caching
+ */
+async function fetchContractABI(
+  queryClient: any,
+  address: string,
+  chainId: number
+): Promise<any[]> {
+  const queryKey = ["contract-abi", chainId, address.toLowerCase()];
+
+  // Try to get from cache first, or fetch if not available
+  const data = await queryClient.fetchQuery({
+    queryKey,
+    queryFn: () => loadContractABI(address, chainId),
+    staleTime: 30 * 60 * 1000, // 30 minutes
+  });
+
+  return data.abi;
+}
+
+/**
+ * Helper function to fetch contract metadata using React Query's cache
+ * This can be called imperatively inside queryFn while still leveraging caching
+ */
+async function fetchContractMetadata(
+  queryClient: any,
+  address: string,
+  chainId: number
+): Promise<ContractMetadata> {
+  const queryKey = ["contract-metadata", chainId, address.toLowerCase()];
+
+  // Try to get from cache first, or fetch if not available
+  const metadata = await queryClient.fetchQuery({
+    queryKey,
+    queryFn: () => loadContractMetadata(address, chainId),
+    staleTime: 30 * 60 * 1000, // 30 minutes
+    gcTime: 60 * 60 * 1000, // 1 hour
+    retry: 1,
+  });
+
+  return metadata;
+}
+
 export function SimulationComponent({
   calls,
   account,
   chain,
 }: SimulationComponentProps) {
+  const queryClient = useQueryClient();
   const simulationQuery = useQuery({
     queryKey: [
       "simulateCalls",
@@ -156,48 +204,30 @@ export function SimulationComponent({
                   address: calls[callIndex]?.to || "unknown",
                 };
               } catch {
-                // If common ABIs fail, try to fetch contract ABI with whatsabi
+                // If common ABIs fail, try to fetch contract ABI with whatsabi (cached)
                 const contractAddress = calls[callIndex]?.to;
-                if (contractAddress) {
-                  const client = createPublicClient({
-                    chain,
-                    transport: http(),
-                  });
+                if (contractAddress && chain) {
+                  try {
+                    const abi = await fetchContractABI(
+                      queryClient,
+                      contractAddress,
+                      chain.id
+                    );
 
-                  const etherscanBaseUrl = Object.values(
-                    chain?.blockExplorers || {}
-                  ).find((item) => item.name.includes("scan"))?.apiUrl;
+                    const decoded = decodeErrorResult({
+                      abi,
+                      data: result.data,
+                    });
 
-                  if (etherscanBaseUrl) {
-                    try {
-                      const whatsabiResult = await whatsabi.autoload(
-                        contractAddress,
-                        {
-                          provider: client,
-                          ...whatsabi.loaders.defaultsWithEnv({
-                            SOURCIFY_CHAIN_ID: chain?.id.toString(),
-                            ETHERSCAN_API_KEY: import.meta.env
-                              .VITE_ETHERSCAN_API_KEY,
-                            ETHERSCAN_BASE_URL: etherscanBaseUrl,
-                          }),
-                        }
-                      );
-
-                      const decoded = decodeErrorResult({
-                        abi: whatsabiResult.abi,
-                        data: result.data,
-                      });
-
-                      return {
-                        callIndex,
-                        errorName: decoded.errorName,
-                        args: decoded.args,
-                        decoded: true,
-                        address: contractAddress,
-                      };
-                    } catch {
-                      // Contract ABI loading/decoding failed
-                    }
+                    return {
+                      callIndex,
+                      errorName: decoded.errorName,
+                      args: decoded.args,
+                      decoded: true,
+                      address: contractAddress,
+                    };
+                  } catch {
+                    // Contract ABI loading/decoding failed
                   }
                 }
               }
@@ -289,6 +319,27 @@ export function SimulationComponent({
                 data: log.data,
                 topics: log.topics,
               });
+
+              // For Transfer events from ERC-20 tokens, fetch metadata to get decimals
+              let metadata: ContractMetadata | undefined;
+              if (
+                decoded.eventName === "Transfer" &&
+                chain &&
+                // ERC-20 Transfer has 3 topics (signature + from + to), ERC-721 also has 3
+                // We'll try to fetch metadata for all Transfer events
+                log.topics.length === 3
+              ) {
+                try {
+                  metadata = await fetchContractMetadata(
+                    queryClient,
+                    log.address,
+                    chain.id
+                  );
+                } catch {
+                  // Metadata fetch failed, continue without it
+                }
+              }
+
               return {
                 callIndex,
                 logIndex,
@@ -296,34 +347,37 @@ export function SimulationComponent({
                 args: decoded.args,
                 address: log.address,
                 decoded: true,
+                metadata,
               };
             } catch {
-              // If common ABIs fail, try to fetch contract ABI with whatsabi
-              const client = createPublicClient({
-                chain,
-                transport: http(),
-              });
-
-              const etherscanBaseUrl = Object.values(
-                chain?.blockExplorers || {}
-              ).find((item) => item.name.includes("scan"))?.apiUrl;
-
-              if (etherscanBaseUrl) {
+              // If common ABIs fail, try to fetch contract ABI with whatsabi (cached)
+              if (chain) {
                 try {
-                  const result = await whatsabi.autoload(log.address, {
-                    provider: client,
-                    ...whatsabi.loaders.defaultsWithEnv({
-                      SOURCIFY_CHAIN_ID: chain?.id.toString(),
-                      ETHERSCAN_API_KEY: import.meta.env.VITE_ETHERSCAN_API_KEY,
-                      ETHERSCAN_BASE_URL: etherscanBaseUrl,
-                    }),
-                  });
+                  const abi = await fetchContractABI(
+                    queryClient,
+                    log.address,
+                    chain.id
+                  );
 
                   const decoded = decodeEventLog({
-                    abi: result.abi,
+                    abi,
                     data: log.data,
                     topics: log.topics,
-                  });
+                  }) as { eventName: string; args: any };
+
+                  // For Transfer events, try to fetch metadata
+                  let metadata: ContractMetadata | undefined;
+                  if (decoded.eventName === "Transfer") {
+                    try {
+                      metadata = await fetchContractMetadata(
+                        queryClient,
+                        log.address,
+                        chain.id
+                      );
+                    } catch {
+                      // Metadata fetch failed, continue without it
+                    }
+                  }
 
                   return {
                     callIndex,
@@ -332,6 +386,7 @@ export function SimulationComponent({
                     args: decoded.args,
                     address: log.address,
                     decoded: true,
+                    metadata,
                   };
                 } catch {
                   // Contract ABI loading/decoding failed
@@ -457,7 +512,12 @@ export function SimulationComponent({
     return null;
   }
 
-  const renderArgValue = (key: string, value: any, isIncoming?: boolean) => {
+  const renderArgValue = (
+    key: string,
+    value: any,
+    isIncoming?: boolean,
+    metadata?: ContractMetadata
+  ) => {
     // Special handling for transfer value/amount fields
     const isValueField =
       key === "value" || key === "amount" || key === "tokenId" || key === "id";
@@ -466,6 +526,22 @@ export function SimulationComponent({
       const colorClass = isIncoming ? "text-green-600" : "text-red-600";
 
       if (typeof value === "bigint") {
+        // Format ERC-20 values with decimals if available
+        if (
+          (key === "value" || key === "amount") &&
+          metadata?.decimals !== undefined &&
+          metadata.isERC20
+        ) {
+          const formatted = formatUnits(value, metadata.decimals);
+          return (
+            <span className={`font-mono font-semibold ${colorClass}`}>
+              {prefix}
+              {formatted} {metadata.symbol || ""}
+            </span>
+          );
+        }
+
+        // For tokenId or id (NFTs), show raw value
         return (
           <span className={`font-mono font-semibold ${colorClass}`}>
             {prefix}
@@ -488,7 +564,7 @@ export function SimulationComponent({
       value.startsWith("0x") &&
       value.length === 42
     ) {
-      return <Address address={value} className="font-mono" />;
+      return <Address address={value} chainId={chain?.id} />;
     }
     // Render bigint as string
     if (typeof value === "bigint") {
@@ -530,14 +606,14 @@ export function SimulationComponent({
             <div key={key} className="flex justify-between items-start">
               <span className="text-muted-foreground text-xs">{key}:</span>
               <span className="text-xs ml-2 flex-1 break-all">
-                {renderArgValue(key, value, isIncoming)}
+                {renderArgValue(key, value, isIncoming, event.metadata)}
               </span>
             </div>
           ))}
         </div>
       )}
       <div className="text-muted-foreground text-xs mt-2 pt-2 border-t">
-        <Address address={event.address} />
+        <Address address={event.address} chainId={chain?.id} showContractName />
       </div>
     </div>
   );
@@ -578,7 +654,11 @@ export function SimulationComponent({
                 </div>
               )}
               <div className="text-muted-foreground text-xs mt-2 pt-2 border-t">
-                <Address address={error.address} />
+                <Address
+                  address={error.address}
+                  chainId={chain?.id}
+                  showContractName
+                />
               </div>
             </div>
           ))}

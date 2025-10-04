@@ -1,6 +1,8 @@
-import { Skeleton } from "@/components/ui/skeleton";
 import Address from "@/components/Address";
-import { whatsabi } from "@shazow/whatsabi";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useContractABI } from "@/hooks/use-contract-abi";
+import { useContractMetadata } from "@/hooks/use-contract-metadata";
+import { formatEthValue } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import {
@@ -21,7 +23,7 @@ interface Call {
 
 interface CallDecoderProps {
   call: Call;
-  chain?: chains.Chain;
+  chainId?: number;
   isExpanded?: boolean;
 }
 
@@ -35,7 +37,7 @@ function stringifyWithBigInt(value: unknown) {
 
 export function CallDecoder({
   call,
-  chain,
+  chainId,
   isExpanded: externalIsExpanded,
 }: CallDecoderProps) {
   const [internalIsExpanded, setInternalIsExpanded] = useState(false);
@@ -48,71 +50,51 @@ export function CallDecoder({
   const dataHex = call.data || "0x";
   const valueEth =
     call.value && isHex(call.value)
-      ? parseFloat(formatEther(hexToBigInt(call.value)))
-          .toFixed(6)
-          .replace(/\.?0+$/, "")
+      ? formatEthValue(formatEther(hexToBigInt(call.value)))
       : "0";
 
+  const isValidAddress =
+    to &&
+    to !== "(contract creation)" &&
+    to.startsWith("0x") &&
+    to.length === 42;
+
+  // Use shared contract ABI hook
   const {
-    data: abiLoadResult,
+    abi,
     isLoading: isAbiLoadLoading,
     isError: isAbiLoadError,
-  } = useQuery({
-    queryKey: ["contractAbi", to?.toLowerCase?.() || to, chain?.id],
-    queryFn: async () => {
-      try {
-        if (!chain || !to || to === "(contract creation)") {
-          return null;
-        }
+  } = useContractABI({
+    address: isValidAddress ? to : undefined,
+    chainId,
+    enabled: Boolean(chainId && isValidAddress),
+  });
 
-        const client = createPublicClient({
-          chain: chain,
-          transport: http(),
-        });
-
-        const etherscanBaseUrl = Object.values(
-          chain?.blockExplorers || {}
-        ).find((item) => item.name.includes("scan"))?.apiUrl;
-
-        if (!etherscanBaseUrl) {
-          throw new Error("Block explorer base URL not found");
-        }
-
-        const result = await whatsabi.autoload(to, {
-          provider: client,
-          ...whatsabi.loaders.defaultsWithEnv({
-            SOURCIFY_CHAIN_ID: chain?.id.toString(),
-            ETHERSCAN_API_KEY: import.meta.env.VITE_ETHERSCAN_API_KEY,
-            ETHERSCAN_BASE_URL: etherscanBaseUrl,
-          }),
-        });
-
-        return result;
-      } catch (_) {
-        return null;
-      }
-    },
-    enabled: Boolean(chain && to && to !== "(contract creation)"),
+  // Use shared contract metadata hook to get contract name
+  const { data: metadata } = useContractMetadata({
+    address: isValidAddress ? to : undefined,
+    chainId,
+    enabled: Boolean(chainId && isValidAddress),
   });
 
   const decoded = useMemo(() => {
     if (!dataHex || dataHex === "0x") return null;
-    if (!abiLoadResult) return null;
+    if (!abi) return null;
     try {
       return decodeFunctionData({
-        abi: abiLoadResult.abi,
+        abi,
         data: dataHex as `0x${string}`,
       });
     } catch {
       return null;
     }
-  }, [abiLoadResult, dataHex]);
+  }, [abi, dataHex]);
 
   const functionItem = useMemo(() => {
     try {
-      if (!decoded || !abiLoadResult?.abi) return null;
-      const abi = (abiLoadResult.abi || []) as Array<any>;
-      const candidates = abi.filter(
+      if (!decoded || !abi) return null;
+      const abiArray = (abi || []) as Array<any>;
+      const candidates = abiArray.filter(
         (item) =>
           item?.type === "function" && item?.name === decoded.functionName
       );
@@ -124,7 +106,7 @@ export function CallDecoder({
     } catch {
       return null;
     }
-  }, [decoded, abiLoadResult]);
+  }, [decoded, abi]);
 
   const addressArgItems = useMemo(() => {
     try {
@@ -192,7 +174,9 @@ export function CallDecoder({
     className?: string,
     ens?: string | null
   ) => {
-    return <Address address={address} className={className} mono />;
+    return (
+      <Address address={address} chainId={chainId} className={className} mono />
+    );
   };
 
   const renderArgValue = (value: any, type?: string) => {
@@ -245,21 +229,28 @@ export function CallDecoder({
       <div className="space-y-1">
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-2 min-w-0">
-            <div className="font-mono text-sm">
+            <span className="text-sm inline-flex items-center">
               {typeof to === "string" && to.startsWith("0x") ? (
-                <Address address={to} />
+                <Address address={to} chainId={chainId} showContractName />
               ) : (
-                to
+                <span className="font-mono">{to}</span>
               )}
-            </div>
-            {abiLoadResult?.contractResult?.name && (
-              <span className="text-xs text-muted-foreground">
-                ({abiLoadResult.contractResult.name})
+            </span>
+            {metadata?.name && (
+              <span className="text-xs text-muted-foreground inline-flex items-center">
+                ({metadata.name})
               </span>
             )}
           </div>
           {valueEth !== "0" && (
-            <span className="font-medium text-sm">{valueEth} ETH</span>
+            <>
+              <span className="text-muted-foreground inline-flex items-center">
+                •
+              </span>
+              <span className="font-medium text-sm inline-flex items-center">
+                {valueEth} ETH
+              </span>
+            </>
           )}
         </div>
         {decoded && (
@@ -279,13 +270,11 @@ export function CallDecoder({
         <div className="text-muted-foreground">To</div>
         <div className="font-mono break-all">
           {typeof to === "string" && to.startsWith("0x") ? (
-            <Address address={to} />
+            <Address address={to} chainId={chainId} showContractName />
           ) : (
             to
           )}{" "}
-          {abiLoadResult?.contractResult?.name
-            ? `(${abiLoadResult.contractResult.name})`
-            : null}
+          {metadata?.name ? `(${metadata.name})` : null}
         </div>
         <div className="text-muted-foreground">Value</div>
         <div>{valueEth} ETH</div>

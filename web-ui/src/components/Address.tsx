@@ -1,13 +1,17 @@
+import { Skeleton } from "@/components/ui/skeleton";
 import { useAvatar } from "@/hooks/use-avatar";
+import { useContractABI } from "@/hooks/use-contract-abi";
+import { useContractMetadata } from "@/hooks/use-contract-metadata";
 import { cn } from "@/lib/utils";
 import { ExternalLink } from "lucide-react";
-import { Skeleton } from "@/components/ui/skeleton";
 
 type AddressProps = {
   address: string;
   className?: string;
   mono?: boolean;
   noLink?: boolean;
+  chainId?: number;
+  showContractName?: boolean;
 };
 
 function truncateMiddle(value: string, head = 6, tail = 4): string {
@@ -21,8 +25,22 @@ export function Address({
   className,
   mono,
   noLink = false,
+  chainId,
+  showContractName = true,
 }: AddressProps) {
-  const { avatarUrl, ensName, isLoading } = useAvatar(address);
+  const { avatarUrl, ensName, isLoading: isLoadingENS } = useAvatar(address);
+
+  const { data: abiData, isLoading: isLoadingABI } = useContractABI({
+    address,
+    chainId,
+    enabled: showContractName && !!chainId,
+  });
+
+  const { data: metadata, isLoading: isLoadingMetadata } = useContractMetadata({
+    address,
+    chainId,
+    enabled: showContractName && !!chainId,
+  });
 
   const avatarElement = avatarUrl ? (
     <img
@@ -32,7 +50,10 @@ export function Address({
     />
   ) : null;
 
-  // Show skeleton while loading ENS name
+  const isLoading =
+    isLoadingENS || (showContractName && (isLoadingABI || isLoadingMetadata));
+
+  // Show skeleton while loading ENS name, ABI, or contract metadata
   if (isLoading) {
     return (
       <div className={cn("inline-flex items-center gap-2", className)}>
@@ -42,8 +63,28 @@ export function Address({
     );
   }
 
-  const displayText = ensName || truncateMiddle(address);
-  const shouldUseMono = mono && !ensName;
+  // Priority: ENS name > Token symbol > Compilation target name > Contract name > Truncated address
+  const truncatedAddress = truncateMiddle(address);
+  let displayText = ensName || truncatedAddress;
+  if (!ensName && showContractName) {
+    if (metadata?.symbol) {
+      displayText = metadata.symbol;
+    } else if (metadata?.name) {
+      displayText = metadata.name;
+    } else if (abiData?.metadata?.name) {
+      displayText = abiData?.metadata?.name;
+    }
+  }
+
+  console.log("displayText", displayText, {
+    address,
+    ensName,
+    showContractName,
+    metadata,
+    abiData,
+  });
+
+  const shouldUseMono = mono;
 
   const content = noLink ? (
     <span className={cn("inline-flex items-center gap-2", className)}>
