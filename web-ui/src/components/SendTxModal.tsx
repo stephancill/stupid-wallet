@@ -2,6 +2,7 @@ import { CallDecoder } from "@/components/CallDecoder";
 import { RequestModal } from "@/components/RequestModal";
 import { SimulationComponent } from "@/components/SimulationComponent";
 import { Button } from "@/components/ui/button";
+import { formatEthValue } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { Copy } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -120,7 +121,7 @@ export function SendTxModal({
   }, [calls]);
 
   const totalValueEth = useMemo(() => {
-    return formatEther(totalValue);
+    return formatEthValue(formatEther(totalValue));
   }, [totalValue]);
 
   // Primary transaction for single transaction operations
@@ -273,12 +274,8 @@ export function SendTxModal({
             <div className="text-sm break-all">
               <div className="font-medium text-foreground">{host}</div>
             </div>
-            {isBatchCall ? (
-              <>
-                <div className="text-sm text-muted-foreground">Total Value</div>
-                <div className="text-sm">{totalValueEth} ETH</div>
-              </>
-            ) : null}
+            <div className="text-sm text-muted-foreground">Value</div>
+            <div className="text-sm">{totalValueEth} ETH</div>
             <div className="text-sm text-muted-foreground">Chain</div>
             <div className="text-sm break-all">
               <div className="text-foreground" title={chainId?.toString()}>
@@ -314,7 +311,7 @@ export function SendTxModal({
                       data: tx.data || tx.input,
                       value: tx.value,
                     }}
-                    chain={chain}
+                    chainId={chainId}
                     isExpanded={allExpanded}
                   />
                 ))}
@@ -343,7 +340,7 @@ export function SendTxModal({
                   data: primaryTransaction.data || primaryTransaction.input,
                   value: primaryTransaction.value,
                 }}
-                chain={chain}
+                chainId={chainId}
                 isExpanded={allExpanded}
               />
             </div>

@@ -1,23 +1,27 @@
+import { Address } from "@/components/Address";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useQuery } from "@tanstack/react-query";
+import { RPC_URLS } from "@/lib/constants";
+import {
+  loadContractABI,
+  loadContractMetadata,
+  type ContractMetadata,
+} from "@/lib/contract-utils";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import {
   createPublicClient,
-  formatEther,
+  decodeErrorResult,
+  decodeEventLog,
+  erc1155Abi,
+  erc20Abi,
+  erc721Abi,
+  formatUnits,
   hexToBigInt,
   http,
   isHex,
   SimulateCallsReturnType,
-  decodeEventLog,
-  decodeErrorResult,
-  erc20Abi,
-  erc1155Abi,
-  erc721Abi,
-  parseEther,
 } from "viem";
-import { whatsabi } from "@shazow/whatsabi";
 import * as chains from "viem/chains";
-import { RPC_URLS } from "@/lib/constants";
-import { Address } from "@/components/Address";
 
 // Transaction types
 interface BaseTransaction {
@@ -39,11 +43,56 @@ interface SimulationComponentProps {
   chain: chains.Chain | undefined;
 }
 
+/**
+ * Helper function to fetch contract ABI using React Query's cache
+ * This can be called imperatively inside queryFn while still leveraging caching
+ */
+async function fetchContractABI(
+  queryClient: any,
+  address: string,
+  chainId: number
+): Promise<any[]> {
+  const queryKey = ["contract-abi", chainId, address.toLowerCase()];
+
+  // Try to get from cache first, or fetch if not available
+  const data = await queryClient.fetchQuery({
+    queryKey,
+    queryFn: () => loadContractABI(address, chainId),
+    staleTime: 30 * 60 * 1000, // 30 minutes
+  });
+
+  return data.abi;
+}
+
+/**
+ * Helper function to fetch contract metadata using React Query's cache
+ * This can be called imperatively inside queryFn while still leveraging caching
+ */
+async function fetchContractMetadata(
+  queryClient: any,
+  address: string,
+  chainId: number
+): Promise<ContractMetadata> {
+  const queryKey = ["contract-metadata", chainId, address.toLowerCase()];
+
+  // Try to get from cache first, or fetch if not available
+  const metadata = await queryClient.fetchQuery({
+    queryKey,
+    queryFn: () => loadContractMetadata(address, chainId),
+    staleTime: 30 * 60 * 1000, // 30 minutes
+    gcTime: 60 * 60 * 1000, // 1 hour
+    retry: 1,
+  });
+
+  return metadata;
+}
+
 export function SimulationComponent({
   calls,
   account,
   chain,
 }: SimulationComponentProps) {
+  const queryClient = useQueryClient();
   const simulationQuery = useQuery({
     queryKey: [
       "simulateCalls",
@@ -155,48 +204,30 @@ export function SimulationComponent({
                   address: calls[callIndex]?.to || "unknown",
                 };
               } catch {
-                // If common ABIs fail, try to fetch contract ABI with whatsabi
+                // If common ABIs fail, try to fetch contract ABI with whatsabi (cached)
                 const contractAddress = calls[callIndex]?.to;
-                if (contractAddress) {
-                  const client = createPublicClient({
-                    chain,
-                    transport: http(),
-                  });
+                if (contractAddress && chain) {
+                  try {
+                    const abi = await fetchContractABI(
+                      queryClient,
+                      contractAddress,
+                      chain.id
+                    );
 
-                  const etherscanBaseUrl = Object.values(
-                    chain?.blockExplorers || {}
-                  ).find((item) => item.name.includes("scan"))?.apiUrl;
+                    const decoded = decodeErrorResult({
+                      abi,
+                      data: result.data,
+                    });
 
-                  if (etherscanBaseUrl) {
-                    try {
-                      const whatsabiResult = await whatsabi.autoload(
-                        contractAddress,
-                        {
-                          provider: client,
-                          ...whatsabi.loaders.defaultsWithEnv({
-                            SOURCIFY_CHAIN_ID: chain?.id.toString(),
-                            ETHERSCAN_API_KEY: import.meta.env
-                              .VITE_ETHERSCAN_API_KEY,
-                            ETHERSCAN_BASE_URL: etherscanBaseUrl,
-                          }),
-                        }
-                      );
-
-                      const decoded = decodeErrorResult({
-                        abi: whatsabiResult.abi,
-                        data: result.data,
-                      });
-
-                      return {
-                        callIndex,
-                        errorName: decoded.errorName,
-                        args: decoded.args,
-                        decoded: true,
-                        address: contractAddress,
-                      };
-                    } catch {
-                      // Contract ABI loading/decoding failed
-                    }
+                    return {
+                      callIndex,
+                      errorName: decoded.errorName,
+                      args: decoded.args,
+                      decoded: true,
+                      address: contractAddress,
+                    };
+                  } catch {
+                    // Contract ABI loading/decoding failed
                   }
                 }
               }
@@ -288,6 +319,27 @@ export function SimulationComponent({
                 data: log.data,
                 topics: log.topics,
               });
+
+              // For Transfer events from ERC-20 tokens, fetch metadata to get decimals
+              let metadata: ContractMetadata | undefined;
+              if (
+                decoded.eventName === "Transfer" &&
+                chain &&
+                // ERC-20 Transfer has 3 topics (signature + from + to), ERC-721 also has 3
+                // We'll try to fetch metadata for all Transfer events
+                log.topics.length === 3
+              ) {
+                try {
+                  metadata = await fetchContractMetadata(
+                    queryClient,
+                    log.address,
+                    chain.id
+                  );
+                } catch {
+                  // Metadata fetch failed, continue without it
+                }
+              }
+
               return {
                 callIndex,
                 logIndex,
@@ -295,34 +347,37 @@ export function SimulationComponent({
                 args: decoded.args,
                 address: log.address,
                 decoded: true,
+                metadata,
               };
             } catch {
-              // If common ABIs fail, try to fetch contract ABI with whatsabi
-              const client = createPublicClient({
-                chain,
-                transport: http(),
-              });
-
-              const etherscanBaseUrl = Object.values(
-                chain?.blockExplorers || {}
-              ).find((item) => item.name.includes("scan"))?.apiUrl;
-
-              if (etherscanBaseUrl) {
+              // If common ABIs fail, try to fetch contract ABI with whatsabi (cached)
+              if (chain) {
                 try {
-                  const result = await whatsabi.autoload(log.address, {
-                    provider: client,
-                    ...whatsabi.loaders.defaultsWithEnv({
-                      SOURCIFY_CHAIN_ID: chain?.id.toString(),
-                      ETHERSCAN_API_KEY: import.meta.env.VITE_ETHERSCAN_API_KEY,
-                      ETHERSCAN_BASE_URL: etherscanBaseUrl,
-                    }),
-                  });
+                  const abi = await fetchContractABI(
+                    queryClient,
+                    log.address,
+                    chain.id
+                  );
 
                   const decoded = decodeEventLog({
-                    abi: result.abi,
+                    abi,
                     data: log.data,
                     topics: log.topics,
-                  });
+                  }) as { eventName: string; args: any };
+
+                  // For Transfer events, try to fetch metadata
+                  let metadata: ContractMetadata | undefined;
+                  if (decoded.eventName === "Transfer") {
+                    try {
+                      metadata = await fetchContractMetadata(
+                        queryClient,
+                        log.address,
+                        chain.id
+                      );
+                    } catch {
+                      // Metadata fetch failed, continue without it
+                    }
+                  }
 
                   return {
                     callIndex,
@@ -331,6 +386,7 @@ export function SimulationComponent({
                     args: decoded.args,
                     address: log.address,
                     decoded: true,
+                    metadata,
                   };
                 } catch {
                   // Contract ABI loading/decoding failed
@@ -374,6 +430,63 @@ export function SimulationComponent({
   const { events: decodedEvents = [], errors: decodedErrors = [] } =
     decodedLogsQuery.data || {};
 
+  const [showOtherEvents, setShowOtherEvents] = useState(false);
+
+  // Separate events into user-relevant transfers/approvals and other events
+  const { userTransfers, otherEvents } = useMemo(() => {
+    const userAddr = account?.toLowerCase();
+    const transfers: Array<{
+      event: (typeof decodedEvents)[0];
+      isIncoming?: boolean;
+    }> = [];
+    const others: typeof decodedEvents = [];
+
+    decodedEvents.forEach((event) => {
+      // Check if this is a transfer event involving the user
+      const isTransfer =
+        event.eventName === "Transfer" ||
+        event.eventName === "TransferSingle" ||
+        event.eventName === "TransferBatch";
+
+      // Check if this is an approval event involving the user
+      const isApproval =
+        event.eventName === "Approval" || event.eventName === "ApprovalForAll";
+
+      if (isTransfer && event.args) {
+        const args = event.args as any;
+        const from =
+          typeof args.from === "string" ? args.from.toLowerCase() : null;
+        const to = typeof args.to === "string" ? args.to.toLowerCase() : null;
+
+        if (from === userAddr || to === userAddr) {
+          transfers.push({
+            event,
+            isIncoming: to === userAddr,
+          });
+          return;
+        }
+      }
+
+      if (isApproval && event.args) {
+        const args = event.args as any;
+        const owner =
+          typeof args.owner === "string" ? args.owner.toLowerCase() : null;
+
+        if (owner === userAddr) {
+          transfers.push({
+            event,
+            isIncoming: undefined, // Approvals don't have a direction
+          });
+          return;
+        }
+      }
+
+      others.push(event);
+    });
+
+    return { userTransfers: transfers, otherEvents: others };
+  }, [decodedEvents, account]);
+
   if (simulationQuery.isLoading || decodedLogsQuery.isLoading) {
     return (
       <div className="space-y-4">
@@ -398,6 +511,120 @@ export function SimulationComponent({
   if (simulationQuery.isError) {
     return null;
   }
+
+  const renderArgValue = (
+    key: string,
+    value: any,
+    isIncoming?: boolean,
+    metadata?: ContractMetadata
+  ) => {
+    // Special handling for transfer value/amount fields
+    const isValueField =
+      key === "value" || key === "amount" || key === "tokenId" || key === "id";
+    if (isValueField && typeof value === "bigint") {
+      // Format ERC-20 values with decimals if available
+      if (
+        (key === "value" || key === "amount") &&
+        metadata?.decimals !== undefined &&
+        metadata.isERC20
+      ) {
+        const formatted = formatUnits(value, metadata.decimals);
+
+        // Apply highlighting only if direction is known
+        if (isIncoming !== undefined) {
+          const prefix = isIncoming ? "+" : "-";
+          const colorClass = isIncoming ? "text-green-600" : "text-red-600";
+          return (
+            <span className={`font-mono font-semibold ${colorClass}`}>
+              {prefix}
+              {formatted} {metadata.symbol || ""}
+            </span>
+          );
+        }
+
+        // No highlighting for non-user transfers, but still format
+        return (
+          <span className="font-mono">
+            {formatted} {metadata.symbol || ""}
+          </span>
+        );
+      }
+
+      // For tokenId or id (NFTs), show raw value
+      if (isIncoming !== undefined) {
+        const prefix = isIncoming ? "+" : "-";
+        const colorClass = isIncoming ? "text-green-600" : "text-red-600";
+        return (
+          <span className={`font-mono font-semibold ${colorClass}`}>
+            {prefix}
+            {value.toString()}
+          </span>
+        );
+      }
+
+      // No highlighting for non-user transfers
+      return <span className="font-mono">{value.toString()}</span>;
+    }
+
+    // Render address using Address component
+    if (
+      typeof value === "string" &&
+      value.startsWith("0x") &&
+      value.length === 42
+    ) {
+      return <Address address={value} chainId={chain?.id} />;
+    }
+    // Render bigint as string
+    if (typeof value === "bigint") {
+      return <span className="font-mono">{value.toString()}</span>;
+    }
+    // Render hex strings with mono font
+    if (typeof value === "string" && value.startsWith("0x")) {
+      return <span className="font-mono break-all">{value}</span>;
+    }
+    // Default string rendering
+    if (typeof value === "string") {
+      return <span>{value}</span>;
+    }
+    // Render arrays and objects
+    if (Array.isArray(value) || (value && typeof value === "object")) {
+      return (
+        <pre className="whitespace-pre-wrap break-words text-xs">
+          {JSON.stringify(
+            value,
+            (_, v) => (typeof v === "bigint" ? v.toString() : v),
+            2
+          )}
+        </pre>
+      );
+    }
+    return <span>{String(value)}</span>;
+  };
+
+  const renderEvent = (
+    event: any,
+    eventIndex: number,
+    isIncoming?: boolean
+  ) => (
+    <div key={eventIndex} className={`text-xs p-3 rounded bg-muted`}>
+      <div className="font-medium mb-2">{event.eventName}</div>
+      {event.args && (
+        <div className="space-y-1">
+          {Object.entries(event.args).map(([key, value]) => (
+            <div key={key} className="flex justify-between items-start">
+              <span className="text-muted-foreground text-xs">{key}:</span>
+              <span className="text-xs ml-2 flex-1 break-all">
+                {renderArgValue(key, value, isIncoming, event.metadata)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="text-muted-foreground text-xs mt-2 pt-2 border-t">
+        <Address address={event.address} chainId={chain?.id} showContractName />
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-4">
@@ -435,44 +662,69 @@ export function SimulationComponent({
                 </div>
               )}
               <div className="text-muted-foreground text-xs mt-2 pt-2 border-t">
-                <Address address={error.address} />
+                <Address
+                  address={error.address}
+                  chainId={chain?.id}
+                  showContractName
+                />
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Events */}
-      {decodedEvents && decodedEvents.length > 0 && (
-        <div className="space-y-3">
-          {decodedEvents.map((event, eventIndex) => (
-            <div key={eventIndex} className="text-xs bg-muted p-3 rounded">
-              <div className="font-medium mb-2">{event.eventName}</div>
-              {event.args && (
-                <div className="space-y-1">
-                  {Object.entries(event.args).map(([key, value]) => (
-                    <div key={key} className="flex justify-between items-start">
-                      <span className="text-muted-foreground text-xs">
-                        {key}:
-                      </span>
-                      <span className="font-mono text-xs ml-2 flex-1 break-all">
-                        {typeof value === "bigint"
-                          ? value.toString()
-                          : typeof value === "string" &&
-                            value.startsWith("0x") &&
-                            value.length === 42
-                          ? `${value.slice(0, 6)}...${value.slice(-4)}`
-                          : String(value)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+      {/* User Transfers (highlighted) */}
+      {userTransfers.length > 0 && (
+        <div>
+          {userTransfers.map(({ event, isIncoming }, eventIndex) =>
+            renderEvent(event, eventIndex, isIncoming)
+          )}
+        </div>
+      )}
+
+      {/* Other Events - show directly if no user transfers, otherwise below the fold */}
+      {otherEvents.length > 0 && userTransfers.length === 0 && (
+        <div>
+          {otherEvents.map((event, eventIndex) =>
+            renderEvent(event, eventIndex, undefined)
+          )}
+        </div>
+      )}
+
+      {/* Other Events (below the fold when there are user transfers) */}
+      {otherEvents.length > 0 && userTransfers.length > 0 && (
+        <div className="space-y-2">
+          <button
+            onClick={() => setShowOtherEvents(!showOtherEvents)}
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+          >
+            <span>
+              {showOtherEvents ? "Hide" : "Show"} other events (
+              {otherEvents.length})
+            </span>
+            <svg
+              className={`w-3 h-3 transition-transform ${
+                showOtherEvents ? "rotate-180" : ""
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 9l-7 7-7-7"
+              />
+            </svg>
+          </button>
+          {showOtherEvents && (
+            <div className="space-y-3">
+              {otherEvents.map((event, eventIndex) =>
+                renderEvent(event, eventIndex, undefined)
               )}
-              <div className="text-muted-foreground text-xs mt-2 pt-2 border-t">
-                <Address address={event.address} />
-              </div>
             </div>
-          ))}
+          )}
         </div>
       )}
     </div>

@@ -74,8 +74,7 @@ export function RequestModal({
               {address && (
                 <Address
                   address={address}
-                  className="inline-flex items-center text-xs"
-                  mono
+                  className="inline-flex items-center"
                   noLink
                 />
               )}
