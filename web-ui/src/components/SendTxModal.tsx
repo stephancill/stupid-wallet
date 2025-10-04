@@ -273,12 +273,8 @@ export function SendTxModal({
             <div className="text-sm break-all">
               <div className="font-medium text-foreground">{host}</div>
             </div>
-            {isBatchCall ? (
-              <>
-                <div className="text-sm text-muted-foreground">Total Value</div>
-                <div className="text-sm">{totalValueEth} ETH</div>
-              </>
-            ) : null}
+            <div className="text-sm text-muted-foreground">Value</div>
+            <div className="text-sm">{totalValueEth} ETH</div>
             <div className="text-sm text-muted-foreground">Chain</div>
             <div className="text-sm break-all">
               <div className="text-foreground" title={chainId?.toString()}>
