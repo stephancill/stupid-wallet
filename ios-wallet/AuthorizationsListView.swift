@@ -25,12 +25,8 @@ struct AuthorizationsListView: View {
     @State private var chainToUpgrade: AuthorizationsUtil.AuthorizationStatus?
     @State private var showingInfo = false
 
-    private var upgradedChains: [AuthorizationsUtil.AuthorizationStatus] {
-        authorizationStatuses.filter { $0.hasAuthorization }
-    }
-
-    private var notUpgradedChains: [AuthorizationsUtil.AuthorizationStatus] {
-        authorizationStatuses.filter { !$0.hasAuthorization && $0.error == nil }
+    private var validChains: [AuthorizationsUtil.AuthorizationStatus] {
+        authorizationStatuses.filter { $0.error == nil }
     }
 
     var body: some View {
@@ -58,22 +54,15 @@ struct AuthorizationsListView: View {
                     Spacer()
                 }
             } else {
-                // Upgraded section
-                if !upgradedChains.isEmpty {
-                    Section("Upgraded") {
-                        ForEach(upgradedChains, id: \.chainId) { status in
-                            chainRow(for: status, isUpgraded: true)
-                        }
+                Section {
+                    ForEach(validChains, id: \.chainId) { status in
+                        chainRow(for: status)
                     }
-                }
-
-                // Not upgraded section
-                if !notUpgradedChains.isEmpty {
-                    Section("Not upgraded yet") {
-                        ForEach(notUpgradedChains, id: \.chainId) { status in
-                            chainRow(for: status, isUpgraded: false)
-                        }
-                    }
+                } header: {
+                    Text("Networks")
+                } footer: {
+                    Text("Enable smart account functionality for transaction batching on each network")
+                        .font(.caption)
                 }
             }
         }
@@ -206,7 +195,7 @@ struct AuthorizationsListView: View {
         }
     }
 
-    private func chainRow(for status: AuthorizationsUtil.AuthorizationStatus, isUpgraded: Bool) -> some View {
+    private func chainRow(for status: AuthorizationsUtil.AuthorizationStatus) -> some View {
         HStack {
             Text(status.chainName)
                 .font(.body)
@@ -214,20 +203,24 @@ struct AuthorizationsListView: View {
             if resettingChainId == status.chainId || upgradingChainId == status.chainId {
                 ProgressView()
                     .scaleEffect(0.8)
-            }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            guard resettingChainId == nil && upgradingChainId == nil else { return }
-
-            if isUpgraded {
-                // Show confirmation dialog for reset
-                chainToReset = status
-                showingResetConfirmation = true
             } else {
-                // Show confirmation dialog for upgrade
-                chainToUpgrade = status
-                showingUpgradeConfirmation = true
+                Toggle("", isOn: Binding(
+                    get: { status.hasAuthorization },
+                    set: { newValue in
+                        guard resettingChainId == nil && upgradingChainId == nil else { return }
+                        
+                        if newValue {
+                            // Show confirmation dialog for upgrade
+                            chainToUpgrade = status
+                            showingUpgradeConfirmation = true
+                        } else {
+                            // Show confirmation dialog for downgrade
+                            chainToReset = status
+                            showingResetConfirmation = true
+                        }
+                    }
+                ))
+                .labelsHidden()
             }
         }
     }
