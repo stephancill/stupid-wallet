@@ -50,7 +50,7 @@ enum GasEstimationUtil {
         to: EthereumAddress,
         value: BigUInt,
         data: EthereumData?
-    ) async -> Swift.Result<BigUInt, Error> {
+    ) -> Swift.Result<BigUInt, Error> {
         let call = EthereumCall(
             from: from,
             to: to,
@@ -108,7 +108,7 @@ enum GasEstimationUtil {
     static func fetchGasPrices(
         web3: Web3,
         maxFeeCapGwei: BigUInt? = BigUInt(100) // 100 gwei default cap
-    ) async -> Swift.Result<GasPrices, Error> {
+    ) -> Swift.Result<GasPrices, Error> {
         let result = awaitPromise(web3.eth.gasPrice())
         
         switch result {
@@ -141,7 +141,7 @@ enum GasEstimationUtil {
         maxFeePerGasHex: String?,
         maxPriorityFeePerGasHex: String?,
         gasPriceHex: String?
-    ) async -> Swift.Result<GasPrices, Error> {
+    ) -> Swift.Result<GasPrices, Error> {
         // If EIP-1559 params provided, use them
         if let maxFee = BigUInt.fromHexQuantity(maxFeePerGasHex ?? ""),
            let maxPrio = BigUInt.fromHexQuantity(maxPriorityFeePerGasHex ?? "") {
@@ -162,7 +162,7 @@ enum GasEstimationUtil {
         }
         
         // Otherwise fetch from network
-        return await fetchGasPrices(web3: web3)
+        return fetchGasPrices(web3: web3)
     }
     
     // MARK: - Total Cost Calculation

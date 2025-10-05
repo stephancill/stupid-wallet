@@ -154,48 +154,35 @@ enum AuthorizationsUtil {
         // Create a minimal transaction to carry the authorization
         let authorizations = [authorization]
 
-        // Estimate gas for the authorization transaction
-        let estimatedGasLimit: BigUInt
-        do {
-            let dummyTx = EthereumCall(
-                from: fromAddr,
-                to: fromAddr,
-                gas: nil,
-                gasPrice: nil,
-                value: EthereumQuantity(quantity: BigUInt.zero),
-                data: try EthereumData(Data()) // Empty data for estimation
-            )
+        // Estimate gas with EIP-7702 overhead
+        let estimateResult = GasEstimationUtil.estimateGasLimit(
+            web3: web3,
+            from: fromAddr,
+            to: fromAddr, // Self-transaction
+            value: BigUInt.zero,
+            data: try EthereumData(Data()) // Empty data for estimation
+        )
 
-            let estimateResult = awaitPromise(web3.eth.estimateGas(call: dummyTx), timeout: 15.0)
-            switch estimateResult {
-            case .success(let estimated):
-                // Add overhead for EIP-7702 authorization (base + per-auth + safety)
-                let authOverhead = BigUInt(25_000 * authorizations.count)
-                let baseOverhead = BigUInt(21_000)
-                let safetyMargin = BigUInt(20_000)
-                estimatedGasLimit = estimated.quantity + authOverhead + baseOverhead + safetyMargin
-            case .failure(let error):
-                throw NSError(domain: "Authorization", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to estimate gas for authorization transaction: \(error.localizedDescription)"])
-            }
-        } catch {
-            throw NSError(domain: "Authorization", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to prepare gas estimation for authorization transaction: \(error.localizedDescription)"])
+        guard case .success(let baseEstimate) = estimateResult else {
+            throw NSError(domain: "Authorization", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "Failed to estimate gas"])
         }
 
-        // Get current gas prices from the network
-        let gasPriceResult = awaitPromise(web3.eth.gasPrice())
-        let maxFeePerGas: BigUInt
-        let maxPriorityFeePerGas: BigUInt
+        let estimatedGasLimit = GasEstimationUtil.applyEIP7702Overhead(
+            to: baseEstimate,
+            authorizationCount: authorizations.count,
+            includeSafetyMargin: true
+        )
 
-        switch gasPriceResult {
-        case .success(let gasPrice):
-            // Use network gas price with reasonable multipliers
-            // maxFeePerGas: 2x network gas price (capped at 100 gwei to prevent excessive fees)
-            let networkGasPrice = gasPrice.quantity
-            maxFeePerGas = min(networkGasPrice * 2, BigUInt(100_000_000_000)) // 100 gwei max
-            maxPriorityFeePerGas = min(networkGasPrice / 2, BigUInt(2_000_000_000)) // 2 gwei max priority
-        case .failure(let error):
-            throw NSError(domain: "Authorization", code: 4, userInfo: [NSLocalizedDescriptionKey: "Failed to get gas price from network: \(error.localizedDescription)"])
+        // Fetch gas prices
+        let gasPricesResult = GasEstimationUtil.fetchGasPrices(web3: web3)
+        guard case .success(let gasPrices) = gasPricesResult else {
+            throw NSError(domain: "Authorization", code: 4,
+                          userInfo: [NSLocalizedDescriptionKey: "Failed to get gas price"])
         }
+
+        let maxFeePerGas = gasPrices.maxFeePerGas
+        let maxPriorityFeePerGas = gasPrices.maxPriorityFeePerGas
 
         let rawTx = try serializeEIP7702Transaction(
             nonce: EthereumQuantity(quantity: txNonce),
