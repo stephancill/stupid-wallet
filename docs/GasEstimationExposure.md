@@ -239,6 +239,52 @@ private extension String {
 }
 ```
 
+### Phase 1 Implementation Notes
+
+**Status:** ✅ Complete
+
+**File Created:** `shared/GasEstimationUtil.swift`
+
+**Key Implementation Details:**
+
+1. **Helper Extensions Added:**
+
+   - `BigUInt.fromHexQuantity(_:)` - Extension method to parse hex strings (with or without "0x" prefix)
+   - `awaitPromise<T>(_:)` - Private helper function to bridge PromiseKit to async/await with Swift.Result
+   - `String.leftPadded(to:)` - Private extension for formatting wei to ETH strings
+
+2. **Result Type Specification:**
+
+   - All async methods return `Swift.Result<T, Error>` (not bare `Result`) to avoid ambiguity with PromiseKit's Result type
+   - This ensures proper compilation in contexts where both Foundation and PromiseKit are imported
+
+3. **Gas Buffer Logic:**
+
+   - Implemented as specified: 20% of estimate or 1,500 gas minimum
+   - Ensures minimum of 21,000 gas for all transactions
+
+4. **EIP-7702 Overhead:**
+
+   - Per-authorization: 25,000 gas
+   - Base overhead: 21,000 gas
+   - Safety margin: 20,000 gas (configurable)
+
+5. **Gas Price Strategy:**
+
+   - `maxFeePerGas`: 2x network gas price, capped at 100 gwei by default
+   - `maxPriorityFeePerGas`: 0.5x network gas price, capped at 2 gwei
+   - Supports override via transaction params (EIP-1559 or legacy)
+
+6. **GasEstimate Structure:**
+   - Includes all hex values for RPC responses
+   - Provides formatted ETH strings with 6 decimal precision
+   - Transaction type enum: `legacy`, `eip1559`, `eip7702`
+   - `toDictionary()` method for JSON serialization
+
+**No Linter Errors:** File compiles cleanly with all required imports (Foundation, Web3, BigInt, PromiseKit)
+
+**Next Steps:** Proceed to Phase 2 to refactor existing gas estimation code to use this utility.
+
 ---
 
 ## Phase 2: Refactor Existing Gas Estimation Code
