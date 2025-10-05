@@ -12,6 +12,7 @@ export const UI_METHODS = [
 export const FAST_METHODS = [
   "eth_accounts",
   "eth_chainId",
+  "net_version",
   "eth_blockNumber",
   "eth_getTransactionByHash",
   "eth_getTransactionReceipt",

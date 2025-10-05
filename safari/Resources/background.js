@@ -166,6 +166,7 @@ async function handleWalletRequest(message, sender, sendResponse) {
         return sendResponse({ error: "Request failed" });
       }
       case "eth_chainId":
+      case "net_version":
       case "eth_blockNumber":
       case "eth_getTransactionByHash":
       case "eth_getTransactionReceipt":

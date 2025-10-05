@@ -6,6 +6,7 @@ import {
   loadContractMetadata,
   type ContractMetadata,
 } from "@/lib/contract-utils";
+import { formatValue as formatValue } from "@/lib/utils";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import {
@@ -320,13 +321,15 @@ export function SimulationComponent({
                 topics: log.topics,
               });
 
-              // For Transfer events from ERC-20 tokens, fetch metadata to get decimals
+              // For Transfer/Approval events from ERC-20 tokens, fetch metadata to get decimals
               let metadata: ContractMetadata | undefined;
               if (
-                decoded.eventName === "Transfer" &&
+                (decoded.eventName === "Transfer" ||
+                  decoded.eventName === "Approval" ||
+                  decoded.eventName === "ApprovalForAll") &&
                 chain &&
-                // ERC-20 Transfer has 3 topics (signature + from + to), ERC-721 also has 3
-                // We'll try to fetch metadata for all Transfer events
+                // ERC-20 Transfer/Approval has 3 topics (signature + from + to / signature + owner + spender)
+                // We'll try to fetch metadata for all these events
                 log.topics.length === 3
               ) {
                 try {
@@ -365,9 +368,13 @@ export function SimulationComponent({
                     topics: log.topics,
                   }) as { eventName: string; args: any };
 
-                  // For Transfer events, try to fetch metadata
+                  // For Transfer/Approval events, try to fetch metadata
                   let metadata: ContractMetadata | undefined;
-                  if (decoded.eventName === "Transfer") {
+                  if (
+                    decoded.eventName === "Transfer" ||
+                    decoded.eventName === "Approval" ||
+                    decoded.eventName === "ApprovalForAll"
+                  ) {
                     try {
                       metadata = await fetchContractMetadata(
                         queryClient,
@@ -518,7 +525,7 @@ export function SimulationComponent({
     isIncoming?: boolean,
     metadata?: ContractMetadata
   ) => {
-    // Special handling for transfer value/amount fields
+    // Special handling for transfer/approval value/amount fields
     const isValueField =
       key === "value" || key === "amount" || key === "tokenId" || key === "id";
     if (isValueField && typeof value === "bigint") {
@@ -528,9 +535,10 @@ export function SimulationComponent({
         metadata?.decimals !== undefined &&
         metadata.isERC20
       ) {
-        const formatted = formatUnits(value, metadata.decimals);
+        const rawFormatted = formatUnits(value, metadata.decimals);
+        const formatted = formatValue(rawFormatted);
 
-        // Apply highlighting only if direction is known
+        // Apply highlighting only if direction is known (transfers, not approvals)
         if (isIncoming !== undefined) {
           const prefix = isIncoming ? "+" : "-";
           const colorClass = isIncoming ? "text-green-600" : "text-red-600";
@@ -542,7 +550,7 @@ export function SimulationComponent({
           );
         }
 
-        // No highlighting for non-user transfers, but still format
+        // No highlighting for non-user transfers or approvals, but still format
         return (
           <span className="font-mono">
             {formatted} {metadata.symbol || ""}

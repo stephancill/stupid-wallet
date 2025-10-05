@@ -2,7 +2,7 @@ import Address from "@/components/Address";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useContractABI } from "@/hooks/use-contract-abi";
 import { useContractMetadata } from "@/hooks/use-contract-metadata";
-import { formatEthValue } from "@/lib/utils";
+import { formatValue } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import {
@@ -51,7 +51,7 @@ export function CallDecoder({
   const dataHex = call.data || "0x";
   const valueEth =
     call.value && isHex(call.value)
-      ? formatEthValue(formatEther(hexToBigInt(call.value)))
+      ? formatValue(formatEther(hexToBigInt(call.value)))
       : "0";
 
   const isValidAddress =

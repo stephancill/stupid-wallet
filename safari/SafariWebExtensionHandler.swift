@@ -134,6 +134,8 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
       return handleAccounts()
     case "eth_chainId":
       return handleChainId()
+    case "net_version":
+      return handleNetVersion()
     case "eth_blockNumber":
       return handleBlockNumber()
     case "eth_getTransactionByHash":
@@ -201,6 +203,18 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
   private func handleChainId() -> [String: Any] {
     return ["result": Constants.Networks.getCurrentChainIdHex()]
+  }
+
+  private func handleNetVersion() -> [String: Any] {
+    let chainIdHex = Constants.Networks.getCurrentChainIdHex()
+    // Convert hex to decimal string
+    let cleanHex = chainIdHex.lowercased().hasPrefix("0x") 
+      ? String(chainIdHex.dropFirst(2)) 
+      : chainIdHex
+    guard let chainIdInt = BigUInt(cleanHex, radix: 16) else {
+      return ["error": "Failed to convert chain ID to decimal"]
+    }
+    return ["result": String(chainIdInt)]
   }
 
   private func handleBlockNumber() -> [String: Any] {

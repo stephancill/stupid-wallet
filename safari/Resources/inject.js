@@ -46,6 +46,9 @@
         case "eth_chainId":
           return this._fetchChainId();
 
+        case "net_version":
+          return this._handleRequest({ method, params });
+
         case "wallet_switchEthereumChain": {
           const p = params && params[0];
           const chainId = p && p.chainId;
