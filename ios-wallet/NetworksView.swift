@@ -138,9 +138,10 @@ struct NetworkDetailView: View {
     @State private var rpcUrls: [String] = []
     @State private var includeInBalance: Bool = true
     @State private var isDefault: Bool = false
-    @State private var isEditing: Bool = false
     @State private var newRpcUrl: String = ""
     @State private var showAddRpcSheet: Bool = false
+    @State private var showEditNameSheet: Bool = false
+    @State private var editedName: String = ""
     @State private var showRemoveConfirmation: Bool = false
     @State private var showChainIdAsHex: Bool = false
     
@@ -149,25 +150,11 @@ struct NetworkDetailView: View {
     var body: some View {
         Form {
             Section("Network Information") {
-                if isDefault {
-                    HStack {
-                        Text("Name")
-                        Spacer()
-                        Text(networkName)
-                            .foregroundColor(.secondary)
-                    }
-                } else {
-                    HStack {
-                        Text("Name")
-                        Spacer()
-                        if isEditing {
-                            TextField("Network Name", text: $networkName)
-                                .multilineTextAlignment(.trailing)
-                        } else {
-                            Text(networkName)
-                                .foregroundColor(.secondary)
-                        }
-                    }
+                HStack {
+                    Text("Name")
+                    Spacer()
+                    Text(networkName)
+                        .foregroundColor(.secondary)
                 }
                 
                 Button(action: { showChainIdAsHex.toggle() }) {
@@ -229,15 +216,9 @@ struct NetworkDetailView: View {
             
             if !isDefault {
                 Section {
-                    if isEditing {
-                        Button("Done Editing") {
-                            saveNetworkName()
-                            isEditing = false
-                        }
-                    } else {
-                        Button("Edit Name") {
-                            isEditing = true
-                        }
+                    Button("Edit Name") {
+                        editedName = networkName
+                        showEditNameSheet = true
                     }
                 }
                 
@@ -258,6 +239,17 @@ struct NetworkDetailView: View {
                         addRpcUrl(newRpcUrl)
                         newRpcUrl = ""
                         showAddRpcSheet = false
+                    }
+                })
+            }
+        }
+        .sheet(isPresented: $showEditNameSheet) {
+            NavigationView {
+                EditNetworkNameView(networkName: $editedName, onSave: {
+                    if !editedName.isEmpty {
+                        networkName = editedName
+                        saveNetworkName()
+                        showEditNameSheet = false
                     }
                 })
             }
@@ -449,6 +441,41 @@ struct AddRpcUrlView: View {
             return false
         }
         return true
+    }
+}
+
+struct EditNetworkNameView: View {
+    @Binding var networkName: String
+    let onSave: () -> Void
+    
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        Form {
+            Section {
+                TextField("Network Name", text: $networkName)
+                    .autocorrectionDisabled()
+            } header: {
+                Text("Network Name")
+            } footer: {
+                Text("Enter a custom name for this network")
+            }
+        }
+        .navigationTitle("Edit Network Name")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") {
+                    dismiss()
+                }
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") {
+                    onSave()
+                }
+                .disabled(networkName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
     }
 }
 
