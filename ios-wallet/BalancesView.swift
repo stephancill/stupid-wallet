@@ -6,35 +6,22 @@ struct BalancesView: View {
 
     var body: some View {
         List {
-            if Constants.Networks.networksList.contains(where: { net in
-                vm.balances[net.name] == nil
-            }) {
+            if NetworkUtils.areIncludedBalancesLoading(balances: vm.balances) {
                 Section {
                     HStack { Spacer(); ProgressView(); Spacer() }
                 }
-            } else if Constants.Networks.networksList.filter({ net in
-                if let balance = vm.balances[net.name], let value = balance { return value > 0 }
-                return false
-            }).isEmpty {
+            } else if NetworkUtils.includedNetworksWithBalance(balances: vm.balances).isEmpty {
                 Section {
                     HStack { Spacer(); Text("No balances to show").foregroundColor(.secondary); Spacer() }
                 }
             } else {
                 Section {
-                    ForEach(Constants.Networks.networksList
-                        .filter({ net in
-                            if let balance = vm.balances[net.name], let value = balance { return value > 0 }
-                            return false
-                        })
-                        .sorted(by: { lhs, rhs in
-                            let lBalance = vm.balances[lhs.name] ?? BigUInt(0)
-                            let rBalance = vm.balances[rhs.name] ?? BigUInt(0)
-                            return lBalance! > rBalance!
-                        }), id: \.name) { net in
+                    ForEach(NetworkUtils.includedNetworksWithBalance(balances: vm.balances), id: \.name) { net in
+                        let chainIdHex = "0x" + String(net.chainId, radix: 16).lowercased()
                         HStack {
                             Text(net.name)
                             Spacer()
-                            Text(vm.formatBalanceForDisplay(vm.balances[net.name] ?? nil))
+                            Text(vm.formatBalanceForDisplay(vm.balances[chainIdHex] ?? nil))
                                 .font(.system(.footnote, design: .monospaced))
                         }
                     }

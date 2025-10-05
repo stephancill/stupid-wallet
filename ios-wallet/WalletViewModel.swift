@@ -31,7 +31,7 @@ final class WalletViewModel: ObservableObject {
     @Published var privateKeyInput: String = ""
     @Published var isSaving: Bool = false
     @Published var errorMessage: String?
-    @Published var balances: [String: BigUInt?] = [:] // network name -> raw balance in wei (nil for loading/error)
+    @Published var balances: [String: BigUInt?] = [:] // chainId hex (e.g. "0x1") -> raw balance in wei (nil for loading/error)
     @Published var biometryAvailable: Bool = false
 
     // Private key reveal functionality
@@ -228,15 +228,31 @@ final class WalletViewModel: ObservableObject {
 
     @MainActor
     func refreshAllBalances() async {
-        for (name, _, _) in Constants.Networks.networksList { balances[name] = nil } // nil indicates loading
+        // Get excluded chains to skip fetching their balances
+        let excludedChains = NetworkUtils.getExcludedChainIds()
+        
+        // Set all included networks to loading state (nil)
+        for (_, chainId, _) in Constants.Networks.networksList {
+            let chainIdHex = "0x" + String(chainId, radix: 16).lowercased()
+            if !excludedChains.contains(chainIdHex) {
+                balances[chainIdHex] = nil // nil indicates loading
+            }
+        }
 
         await withTaskGroup(of: (String, BigUInt?).self) { group in
-            for (name, _, url) in Constants.Networks.networksList {
-                group.addTask { (name, await self.fetchBalance(rpcURL: url)) }
+            for (_, chainId, url) in Constants.Networks.networksList {
+                let chainIdHex = "0x" + String(chainId, radix: 16).lowercased()
+                
+                // Skip fetching balance for excluded chains
+                if excludedChains.contains(chainIdHex) {
+                    continue
+                }
+                
+                group.addTask { (chainIdHex, await self.fetchBalance(rpcURL: url)) }
             }
 
-            for await (network, balance) in group {
-                balances[network] = balance
+            for await (chainIdHex, balance) in group {
+                balances[chainIdHex] = balance
             }
         }
     }
@@ -266,6 +282,27 @@ final class WalletViewModel: ObservableObject {
             return "Loading..."
         }
         return formatWeiToEth(balance)
+    }
+    
+    func totalBalanceIncludingOnlyEnabled() -> BigUInt {
+        var total = BigUInt(0)
+        
+        // Get excluded chain IDs from utility
+        let excludedChains = NetworkUtils.getExcludedChainIds()
+        
+        for (_, chainId, _) in Constants.Networks.networksList {
+            let chainIdHex = "0x" + String(chainId, radix: 16).lowercased()
+            
+            // Skip if excluded
+            if excludedChains.contains(chainIdHex) {
+                continue
+            }
+            
+            if let maybe = balances[chainIdHex], let balance = maybe {
+                total += balance
+            }
+        }
+        return total
     }
 
     @MainActor

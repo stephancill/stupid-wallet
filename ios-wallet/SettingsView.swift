@@ -15,6 +15,9 @@ struct SettingsView: View {
                     NavigationLink(destination: ConnectedAppsView()) {
                         Text("Connected Apps")
                     }
+                    NavigationLink(destination: NetworksView()) {
+                        Text("Networks")
+                    }
                     NavigationLink(destination: PrivateKeyView(vm: vm)) {
                         Text("Private Key")
                     }
@@ -22,15 +25,15 @@ struct SettingsView: View {
 
                 Section {
                     Button(role: .destructive, action: { showClearWalletConfirmation = true }) {
-                        Text("Clear Wallet")
+                        Text("Log out")
                     }
                 }
                 .confirmationDialog(
-                    "Clear Wallet",
+                    "Log out",
                     isPresented: $showClearWalletConfirmation,
                     titleVisibility: .visible
                 ) {
-                    Button("Clear Wallet", role: .destructive) {
+                    Button("Log out", role: .destructive) {
                         vm.clearWallet()
                         showClearWalletConfirmation = false
                         dismiss()

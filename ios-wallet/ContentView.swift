@@ -147,27 +147,16 @@ struct ContentView: View {
                     HStack {
                         Spacer()
                         Menu {
-                            if isBalancesLoading() {
+                            if NetworkUtils.areIncludedBalancesLoading(balances: vm.balances) {
                                 Text("Loading balances...")
                                     .foregroundColor(.secondary)
-                            } else if Constants.Networks.networksList.filter({ net in
-                                if let balance = vm.balances[net.name], let value = balance { return value > 0 }
-                                return false
-                            }).isEmpty {
+                            } else if NetworkUtils.includedNetworksWithBalance(balances: vm.balances).isEmpty {
                                 Text("No balances to show")
                                     .foregroundColor(.secondary)
                             } else {
-                                ForEach(Constants.Networks.networksList
-                                    .filter({ net in
-                                        if let balance = vm.balances[net.name], let value = balance { return value > 0 }
-                                        return false
-                                    })
-                                    .sorted(by: { lhs, rhs in
-                                        let lBalance = vm.balances[lhs.name] ?? BigUInt(0)
-                                        let rBalance = vm.balances[rhs.name] ?? BigUInt(0)
-                                        return lBalance! > rBalance!
-                                    }), id: \.name) { net in
-                                    Text("\(net.name) • \(vm.formatBalanceForDisplay(vm.balances[net.name] ?? nil))")
+                                ForEach(NetworkUtils.includedNetworksWithBalance(balances: vm.balances), id: \.name) { net in
+                                    let chainIdHex = "0x" + String(net.chainId, radix: 16).lowercased()
+                                    Text("\(net.name) • \(vm.formatBalanceForDisplay(vm.balances[chainIdHex] ?? nil))")
                                         .font(.system(.footnote, design: .monospaced))
                                         .foregroundColor(.secondary)
                                     .disabled(true)
@@ -175,7 +164,7 @@ struct ContentView: View {
                             }
                         } label: {
                             HStack(alignment: .center, spacing: 8) {
-                                if isBalancesLoading() {
+                                if NetworkUtils.areIncludedBalancesLoading(balances: vm.balances) {
                                     ProgressView()
                                         .scaleEffect(1.0)
                                 } else {
@@ -235,21 +224,8 @@ struct ContentView: View {
     }
 
     private func totalEthDisplay() -> String {
-        var total = BigUInt(0)
-        for (name, _, _) in Constants.Networks.networksList {
-            if let maybe = vm.balances[name], let balance = maybe {
-                total += balance
-            }
-        }
-        return vm.formatWeiToEth(total)
+        return vm.formatWeiToEth(vm.totalBalanceIncludingOnlyEnabled())
     }
-
-    private func isBalancesLoading() -> Bool {
-        return Constants.Networks.networksList.contains(where: { net in
-            vm.balances[net.name] == nil
-        })
-    }
-
 
     private var balancesEmptyState: some View {
         HStack(alignment: .center) {
