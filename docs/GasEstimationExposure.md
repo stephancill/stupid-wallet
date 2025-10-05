@@ -1461,6 +1461,45 @@ Never duplicate gas estimation logic. All transaction flows should use these uti
 
 Save as `docs/GasEstimationExposure.md` for implementation reference.
 
+### Phase 7 Implementation Notes
+
+**Status:** ✅ Complete
+
+**Files Modified:**
+
+1. `CONTRIBUTING.md` - Added gas estimation documentation section (lines 203-212)
+
+**Key Implementation Details:**
+
+1. **Documentation Section Added:**
+
+   - Placed after "Implementation Notes" and before "Balances / Networks"
+   - Lists all four main utility functions with descriptions
+   - Includes implementation details: buffer calculations, overhead values, return types
+   - Emphasizes consistency rule: "Never duplicate gas estimation logic"
+
+2. **Documentation Content:**
+
+   - `estimateGasLimit()` - Documents 20% buffer or 1,500 gas minimum
+   - `fetchGasPrices()` / `getGasPrices()` - Documents EIP-1559 style with legacy fallback
+   - `applyEIP7702Overhead()` - Documents exact overhead values (25k + 21k + 20k)
+   - `calculateTotalCost()` - Documents total cost calculation with formatted output
+
+3. **Technical Details Included:**
+   - File location: `shared/GasEstimationUtil.swift`
+   - Return type: `Swift.Result<T, Error>`
+   - Bridging pattern: Synchronous via `awaitPromise()` for PromiseKit compatibility
+   - Usage examples: `eth_sendTransaction`, `wallet_sendCalls`, EIP-7702 authorizations
+
+**Documentation Goals Achieved:**
+
+- ✅ Clear reference for future contributors
+- ✅ Prevents code duplication by documenting centralized utilities
+- ✅ Provides implementation guidance with specific technical details
+- ✅ Maintains consistency with existing CONTRIBUTING.md style
+
+**Next Steps:** All phases complete! Gas estimation exposure is fully implemented, tested, and documented.
+
 ---
 
 ## Benefits of This Approach

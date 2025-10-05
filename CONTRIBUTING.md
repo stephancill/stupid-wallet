@@ -200,6 +200,17 @@ xcodebuild -scheme ios-wallet -configuration Debug -destination 'generic/platfor
   - Native handlers should return `{ result }` or `{ error }` responses
   - **Request Tracking**: Background script maintains a `pendingRequests` Map to store site metadata for confirmation-required methods, with automatic cleanup (5-minute timeout)
 
+  **For Gas Estimation:**
+
+  All gas estimation should use the centralized `GasEstimationUtil` (located in `shared/GasEstimationUtil.swift`):
+
+  - `estimateGasLimit()` - Get gas limit with standard 20% buffer (or 1,500 gas minimum)
+  - `fetchGasPrices()` / `getGasPrices()` - Get current network gas prices (EIP-1559 style with fallback to legacy)
+  - `applyEIP7702Overhead()` - Add overhead for EIP-7702 authorization transactions (25k per auth + 21k base + 20k safety margin)
+  - `calculateTotalCost()` - Calculate total transaction cost (gas + value) with formatted ETH strings
+
+  **Never duplicate gas estimation logic.** All transaction flows (`eth_sendTransaction`, `wallet_sendCalls`, EIP-7702 authorizations) use these utilities to ensure consistency. The utility returns `Swift.Result<T, Error>` for proper error handling and uses synchronous bridging via `awaitPromise()` internally for PromiseKit compatibility.
+
 - **Balances / Networks**
 
   - Add network RPC URL and call `web3.eth.getBalance` in `ContentView.swift`.
