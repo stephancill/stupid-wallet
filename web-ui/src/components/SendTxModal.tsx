@@ -3,6 +3,7 @@ import { RequestModal } from "@/components/RequestModal";
 import { SimulationComponent } from "@/components/SimulationComponent";
 import { Button } from "@/components/ui/button";
 import { formatValue } from "@/lib/utils";
+import { GasEstimation } from "@/lib/types";
 import { useQuery } from "@tanstack/react-query";
 import { Copy } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -165,6 +166,26 @@ export function SendTxModal({
     ) as chains.Chain;
   }, [chainId]);
 
+  const {
+    data: gasEstimation,
+    isLoading: isGasLoading,
+    isError: isGasError,
+  } = useQuery({
+    queryKey: ["gasEstimation", method, stringifyWithBigInt(params)],
+    queryFn: async () => {
+      const { result }: { result: GasEstimation } =
+        await browser.runtime.sendMessage({
+          type: "WALLET_REQUEST",
+          method: "stupid_estimateTransaction",
+          params: params,
+        });
+      return result;
+    },
+    enabled: !!chainId, // Only run after chainId is loaded
+    retry: 1,
+    staleTime: 10000, // 10 seconds
+  });
+
   const to = useMemo(
     () => primaryTransaction.to || "(contract creation)",
     [primaryTransaction]
@@ -216,7 +237,7 @@ export function SendTxModal({
     },
   });
 
-  const isAggregateLoading = isChainIdLoading || isNamesLoading;
+  const isAggregateLoading = isChainIdLoading || isNamesLoading || isGasLoading;
   const controlsDisabled = isSubmitting || isAggregateLoading;
 
   const handleApprove = async () => {
@@ -274,13 +295,25 @@ export function SendTxModal({
             <div className="text-sm break-all">
               <div className="font-medium text-foreground">{host}</div>
             </div>
-            <div className="text-sm text-muted-foreground">Value</div>
-            <div className="text-sm">{totalValueEth} ETH</div>
             <div className="text-sm text-muted-foreground">Chain</div>
             <div className="text-sm break-all">
               <div className="text-foreground" title={chainId?.toString()}>
                 {chain?.name || "Unknown Chain"}
               </div>
+            </div>
+            <div className="text-sm text-muted-foreground">Value</div>
+            <div className="text-sm">{totalValueEth} ETH</div>
+            <div className="text-sm text-muted-foreground">Network Fee</div>
+            <div className="text-sm">
+              {isGasLoading ? (
+                <span className="text-muted-foreground">Estimating...</span>
+              ) : isGasError || !gasEstimation ? (
+                <span className="text-muted-foreground">
+                  Unable to estimate
+                </span>
+              ) : (
+                <>{gasEstimation.estimatedGasCostEth} ETH</>
+              )}
             </div>
           </div>
 

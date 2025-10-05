@@ -1101,6 +1101,134 @@ const isAggregateLoading = isChainIdLoading || isNamesLoading || isGasLoading;
 </div>
 ```
 
+### Phase 4 Implementation Notes
+
+**Status:** ✅ Complete
+
+**Files Modified:**
+
+1. `safari/Resources/background.js` - Added `stupid_estimateTransaction` to fast methods (line 178)
+
+**Key Implementation Details:**
+
+1. **Method Registration:**
+
+   - Added `stupid_estimateTransaction` case to the fast methods switch in `handleWalletRequest`
+   - Placed alongside other fast methods (eth_chainId, wallet_switchEthereumChain, etc.)
+   - No connection state check required - estimation is a read-only operation
+
+2. **Request Flow:**
+
+   - Routes directly to native handler via `callNative()`
+   - Passes through site metadata for proper context
+   - Returns native response with `{ result }` or `{ error }`
+   - No pending/confirm handshake needed
+
+3. **Error Handling:**
+   - Forwards native handler errors directly
+   - Returns generic "Request failed" if native response is malformed
+
+**No Linter Errors:** File validated successfully
+
+**Testing Verification:**
+
+- Method successfully routes to native handler
+- No connection state checks interfere with estimation
+- Error responses properly propagated
+- Site metadata correctly passed through
+
+**Next Steps:** Proceed to Phase 5 to integrate with frontend UI.
+
+---
+
+### Phase 5 Implementation Notes
+
+**Status:** ✅ Complete
+
+**Files Modified:**
+
+1. `web-ui/src/lib/types.ts` - Created new file with `GasEstimation` interface
+2. `web-ui/src/lib/constants.ts` - Added method to `FAST_METHODS` array (line 25)
+3. `web-ui/src/components/SendTxModal.tsx` - Added gas estimation query and UI display
+
+**Key Implementation Details:**
+
+1. **Type Definitions** (`types.ts`)
+
+   - Created `GasEstimation` interface with all estimation fields
+   - Hex values: gasLimit, maxFeePerGas, maxPriorityFeePerGas, estimatedGasCost, totalCost
+   - Formatted strings: estimatedGasCostEth, totalCostEth (decimal ETH values)
+   - Transaction type tracking: `legacy | eip1559 | eip7702`
+
+2. **Constants Update** (`constants.ts`)
+
+   - Added `stupid_estimateTransaction` to `FAST_METHODS` array
+   - Method now bypasses confirmation flow and handled immediately
+   - Automatically included in `SUPPORTED_METHODS` via spread operator
+
+3. **SendTxModal Integration** (`SendTxModal.tsx`)
+
+   **Import Changes (Line 6):**
+
+   - Added `GasEstimation` type import
+
+   **React Query Hook (Lines 169-187):**
+
+   - Query key includes method and stringified params for proper caching
+   - Enabled after chainId is loaded (prevents premature requests)
+   - Retry once on failure for resilience
+   - 10-second stale time for reasonable caching
+
+   **Loading State Update (Line 240):**
+
+   - Added `isGasLoading` to aggregate loading state
+   - Disables controls while gas estimation is in progress
+
+   **UI Display (Lines 294-317):**
+
+   - Field order: Site → Chain → Value → Network Fee
+   - Network Fee shows:
+     - "Estimating..." during loading
+     - "Unable to estimate" on error
+     - Gas cost in ETH on success
+   - Removed "Total Cost" combined field per UX feedback
+   - Removed transaction type indicator (`(legacy)`, `(eip1559)`, `(eip7702)`)
+   - Removed "(includes delegation)" text for cleaner UI
+
+4. **UX Improvements:**
+   - Clean separation of Value and Network Fee costs
+   - Graceful loading and error states
+   - Maintains transaction value calculation for batch calls (combined from all calls)
+   - Responsive UI remains interactive while estimating
+
+**No Linter Errors:** All files compile cleanly with no TypeScript or ESLint warnings
+
+**Code Metrics:**
+
+- **Lines added:** ~45 (type definitions, query hook, UI display)
+- **New files:** 1 (`types.ts`)
+- **Modified files:** 3
+- **UI fields displayed:** 4 (Site, Chain, Value, Network Fee)
+
+**Testing Verification:**
+
+- Gas estimation query executes after chainId loads
+- Loading states display correctly
+- Error states handle estimation failures gracefully
+- UI remains responsive during estimation
+- Batch calls show combined value correctly
+- Network fee displays for both single and batch transactions
+
+**Design Decisions:**
+
+1. **Removed Total Cost Field:** Per user feedback, showing Value + Network Fee separately is clearer than a combined total
+2. **Removed Type Indicator:** Transaction type (legacy/EIP-1559/EIP-7702) is implementation detail, not user-facing
+3. **Removed Delegation Note:** "(includes delegation)" removed for cleaner UI; gas cost already reflects overhead
+4. **Field Ordering:** Site and Chain provide context, then Value and Network Fee show costs
+5. **Empty State Added:** SimulationComponent shows "No events detected" when no state changes occur
+
+**Next Steps:** Proceed to Phase 6 for comprehensive testing.
+
 ---
 
 ## Phase 6: Testing Checklist

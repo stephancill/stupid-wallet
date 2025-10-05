@@ -174,7 +174,8 @@ async function handleWalletRequest(message, sender, sendResponse) {
       case "wallet_addEthereumChain":
       case "wallet_getCapabilities":
       case "wallet_getCallsStatus":
-      case "wallet_switchEthereumChain": {
+      case "wallet_switchEthereumChain":
+      case "stupid_estimateTransaction": {
         const native = await callNative({
           method,
           params,

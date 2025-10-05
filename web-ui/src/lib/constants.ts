@@ -22,6 +22,7 @@ export const FAST_METHODS = [
   "wallet_disconnect",
   "wallet_getCapabilities",
   "wallet_getCallsStatus",
+  "stupid_estimateTransaction",
 ] as const;
 
 // Note: supported methods are also independently declared in
