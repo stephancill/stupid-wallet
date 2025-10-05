@@ -923,7 +923,17 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     }
 
     // Extract version for response format (EIP-5792)
-    let version = callsObj["version"] as? Int ?? 1
+    // Support both string ("1.0", "2.0.0") and legacy numeric format
+    let versionString = callsObj["version"] as? String ?? (callsObj["version"] as? Int).map(String.init) ?? "1.0"
+    let isV2 = versionString.hasPrefix("2.")
+    
+    // For v2, validate atomicRequired capability if present
+    if isV2, let capabilities = callsObj["capabilities"] as? [String: Any],
+       let atomic = capabilities["atomic"] as? [String: Any],
+       let required = atomic["required"] as? Bool, required {
+      // Atomic execution is required - we support this via EIP-7702
+      // Continue with execution
+    }
 
     guard let fromAddress = getSavedAddress() else {
       return ["error": "No wallet address available"]
@@ -1032,7 +1042,7 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         calls: batchCalls,
         fromAddress: fromAddress,
         chainIdBig: chainIdBig,
-        version: version,
+        isV2: isV2,
         currentBalance: currentBalance,
         txNonce: txNonceEQ,
         needsDelegation: needsDelegation
@@ -1108,8 +1118,13 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         return ["error": "No supported chains found in request"]
       }
     } else {
-      // If no chain IDs specified, return capabilities for current chain
-      chainIdsToQuery = [Constants.Networks.getCurrentChainIdHex()]
+      // Per EIP-5792: If no chain IDs specified, return capabilities for ALL supported chains
+      // Include both default networks and custom networks
+      let allNetworks = Constants.Networks.networksList
+      for network in allNetworks {
+        let chainIdHex = "0x" + String(network.chainId, radix: 16)
+        chainIdsToQuery.append(chainIdHex)
+      }
     }
 
     // Build capabilities response
@@ -1119,9 +1134,11 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     for chainIdHex in chainIdsToQuery {
       var chainCapabilities: [String: [String: Any]] = [:]
 
-      // Add atomic capability (since wallet_sendCalls is supported)
+      // Add atomic capability (EIP-5792 v2.0.0 format)
+      // Status: "supported" (we execute atomically via EIP-7702)
       chainCapabilities["atomic"] = [
-        "supported": true
+        "status": "supported",
+        "supported": true // Backwards compatibility
       ]
 
       capabilities[chainIdHex] = chainCapabilities
@@ -1130,7 +1147,8 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     // Add cross-chain capabilities (0x0 represents capabilities across all chains)
     var globalCapabilities: [String: [String: Any]] = [:]
     globalCapabilities["atomic"] = [
-      "supported": true
+      "status": "supported",
+      "supported": true // Backwards compatibility
     ]
     capabilities["0x0"] = globalCapabilities
 
@@ -1514,7 +1532,7 @@ private func awaitPromise<T>(_ promise: Promise<T>) -> Swift.Result<T, Error> {
 
 private func createExecuteBatchTransaction(
   calls: [[String: Any]],
-  fromAddress: String, chainIdBig: BigUInt, version: Int, currentBalance: BigUInt,
+  fromAddress: String, chainIdBig: BigUInt, isV2: Bool, currentBalance: BigUInt,
   txNonce: EthereumQuantity,
   needsDelegation: Bool
 ) async throws -> [String: Any] {
@@ -1677,9 +1695,18 @@ private func createExecuteBatchTransaction(
       data: data
     )
 
-    if version == 2 {
-      return ["result": ["id": txHash]]
+    if isV2 {
+      // EIP-5792 v2.0.0 response format
+      return [
+        "result": [
+          "id": txHash,
+          "capabilities": [
+            "atomic": true
+          ]
+        ]
+      ]
     } else {
+      // v1.0 response format (simple string)
       return ["result": txHash]
     }
   }
@@ -1729,9 +1756,18 @@ private func createExecuteBatchTransaction(
   // Send transaction
   switch awaitPromise(web3.eth.sendRawTransaction(transaction: signedTx)) {
   case .success(let txHash):
-    if version == 2 {
-      return ["result": ["id": txHash.hex()]]
+    if isV2 {
+      // EIP-5792 v2.0.0 response format
+      return [
+        "result": [
+          "id": txHash.hex(),
+          "capabilities": [
+            "atomic": true
+          ]
+        ]
+      ]
     } else {
+      // v1.0 response format (simple string)
       return ["result": txHash.hex()]
     }
   case .failure(let e):

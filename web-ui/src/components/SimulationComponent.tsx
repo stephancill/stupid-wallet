@@ -529,12 +529,22 @@ export function SimulationComponent({
     const isValueField =
       key === "value" || key === "amount" || key === "tokenId" || key === "id";
     if (isValueField && typeof value === "bigint") {
+      // Check if this is an unlimited approval (very large number)
+      // Common threshold: values > 2^128 are considered unlimited
+      // This catches max uint256 (2^256 - 1) and other large approval amounts
+      const UNLIMITED_THRESHOLD = BigInt(2) ** BigInt(128);
+      const isUnlimited = value >= UNLIMITED_THRESHOLD;
+
       // Format ERC-20 values with decimals if available
       if (
         (key === "value" || key === "amount") &&
         metadata?.decimals !== undefined &&
         metadata.isERC20
       ) {
+        if (isUnlimited) {
+          return <span>Unlimited {metadata.symbol || ""}</span>;
+        }
+
         const rawFormatted = formatUnits(value, metadata.decimals);
         const formatted = formatValue(rawFormatted);
 

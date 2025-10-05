@@ -11,6 +11,8 @@ import {
   CredenzaTitle,
 } from "@/components/ui/credenza";
 import Address from "@/components/Address";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { cn } from "@/lib/utils";
 
 type RequestModalProps = {
   children: React.ReactNode;
@@ -39,6 +41,8 @@ export function RequestModal({
   address,
   primaryDisabled = false,
 }: RequestModalProps) {
+  const isMobile = useIsMobile();
+
   const handlePrimaryClick = async () => {
     try {
       await onPrimary();
@@ -74,7 +78,10 @@ export function RequestModal({
               {address && (
                 <Address
                   address={address}
-                  className="inline-flex items-center"
+                  className={cn(
+                    "inline-flex items-center",
+                    isMobile && "text-xs"
+                  )}
                   noLink
                 />
               )}
