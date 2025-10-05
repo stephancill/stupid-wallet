@@ -171,6 +171,9 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     case "wallet_getCallsStatus":
       let params = messageDict["params"] as? [Any]
       return handleWalletGetCallsStatus(params: params)
+    case "stupid_estimateTransaction":
+      let params = messageDict["params"] as? [Any]
+      return await handleEstimateTransaction(params: params)
     default:
       return ["error": "Method \(method) not supported"]
     }
@@ -654,7 +657,7 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
       // Value
       let weiValue = BigUInt.fromHexQuantity(valueHex) ?? BigUInt.zero
 
-      // Gas limit: provided or sane default
+      // Gas limit: provided or use estimation
       let gasLimitQty: BigUInt
       if let gasHex = gasHex, let g = BigUInt.fromHexQuantity(gasHex) {
         gasLimitQty = g
@@ -662,24 +665,37 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         guard let toForEstimate = toAddr else {
           return ["error": "Missing 'to' address"]
         }
-        let call = EthereumCall(
+
+        let estimateResult = GasEstimationUtil.estimateGasLimit(
+          web3: web3,
           from: fromAddr,
           to: toForEstimate,
-          gas: nil,
-          gasPrice: nil,
-          value: EthereumQuantity(quantity: weiValue),
+          value: weiValue,
           data: transactionData
         )
 
-        switch awaitPromise(web3.eth.estimateGas(call: call)) {
+        switch estimateResult {
         case .success(let estimate):
-          let base = estimate.quantity
-          let buffer = max(base / BigUInt(5), BigUInt(1_500))
-          let padded = base + buffer
-          gasLimitQty = max(padded, BigUInt(21_000))
+          gasLimitQty = estimate
         case .failure(let error):
           return ["error": "Failed to estimate gas: \(error.localizedDescription)"]
         }
+      }
+
+      // Fetch gas prices
+      let gasPricesResult = GasEstimationUtil.getGasPrices(
+        web3: web3,
+        maxFeePerGasHex: maxFeePerGasHex,
+        maxPriorityFeePerGasHex: maxPriorityFeePerGasHex,
+        gasPriceHex: gasPriceHex
+      )
+
+      let gasPrices: GasEstimationUtil.GasPrices
+      switch gasPricesResult {
+      case .success(let prices):
+        gasPrices = prices
+      case .failure(let error):
+        return ["error": "Failed to get gas price: \(error.localizedDescription)"]
       }
 
       // Build base tx
@@ -691,41 +707,24 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         value: EthereumQuantity(quantity: weiValue)
       )
 
-      // Fees: prefer EIP-1559
-      if let maxFee = BigUInt.fromHexQuantity(maxFeePerGasHex ?? ""),
-        let maxPrio = BigUInt.fromHexQuantity(maxPriorityFeePerGasHex ?? "")
-      {
+      // Set fees based on gas prices
+      if gasPrices.isEIP1559 {
         txToSign.transactionType = EthereumTransaction.TransactionType.eip1559
-        txToSign.maxFeePerGas = EthereumQuantity(quantity: maxFee)
-        txToSign.maxPriorityFeePerGas = EthereumQuantity(quantity: maxPrio)
+        txToSign.maxFeePerGas = EthereumQuantity(quantity: gasPrices.maxFeePerGas)
+        txToSign.maxPriorityFeePerGas = EthereumQuantity(quantity: gasPrices.maxPriorityFeePerGas)
       } else {
-        let legacyGasPrice: EthereumQuantity
-        if let gasPriceHex = gasPriceHex, let gp = BigUInt.fromHexQuantity(gasPriceHex) {
-          legacyGasPrice = EthereumQuantity(quantity: gp)
-        } else {
-          switch awaitPromise(web3.eth.gasPrice()) {
-          case .success(let gp): legacyGasPrice = gp
-          case .failure: return ["error": "Failed to get gas price"]
-          }
-        }
-        txToSign.gasPrice = legacyGasPrice
+        txToSign.gasPrice = EthereumQuantity(quantity: gasPrices.maxFeePerGas)
       }
 
-      // Check if balance is sufficient for estimated transaction cost
-      let estimatedGasCost: BigUInt
-      let totalValue = weiValue  // Value being sent in the transaction
-      if let maxFee = BigUInt.fromHexQuantity(maxFeePerGasHex ?? ""),
-        BigUInt.fromHexQuantity(maxPriorityFeePerGasHex ?? "") != nil
-      {
-        // EIP-1559: use maxFeePerGas
-        estimatedGasCost = gasLimitQty * maxFee
-      } else {
-        // Legacy: use gasPrice
-        let gasPrice = txToSign.gasPrice?.quantity ?? BigUInt.zero
-        estimatedGasCost = gasLimitQty * gasPrice
-      }
+      // Calculate total cost
+      let gasEstimate = GasEstimationUtil.calculateTotalCost(
+        gasLimit: gasLimitQty,
+        gasPrices: gasPrices,
+        transactionValue: weiValue,
+        transactionType: gasPrices.isEIP1559 ? .eip1559 : .legacy
+      )
 
-      let totalCost = estimatedGasCost + totalValue
+      let totalCost = gasEstimate.totalCost
 
       if currentBalance < totalCost {
         let shortfall = totalCost - currentBalance
@@ -979,26 +978,16 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
       var batchCalls: [[String: Any]] = []
 
       // Check if user's wallet needs delegation to Simple7702Account
-      var needsDelegation = false
-      switch awaitPromise(web3.eth.getCode(address: fromAddr, block: .latest)) {
-      case .success(let code):
-        if code.bytes.isEmpty {
-          // Empty code - needs delegation
-          needsDelegation = true
-        } else if code.bytes.count == 23 && code.bytes.starts(with: [0xef, 0x01, 0x00]) {
-          // Check if already delegated to Simple7702Account
-          let delegatedAddress = Array(code.bytes[3...])  // Skip 0xef0100 prefix
-          let expectedAddress = simple7702Addr.rawAddress
-          if delegatedAddress != expectedAddress {
-            // Delegated to wrong address - needs re-delegation
-            needsDelegation = true
-          } else {
-            // Already properly delegated
-          }
-        } else {
-          // Has code but not a delegation indicator - needs delegation to replace
-          needsDelegation = true
-        }
+      let needsDelegationResult = AuthorizationsUtil.checkIfNeedsDelegation(
+        addressHex: fromAddress,
+        targetContractHex: AuthorizationsUtil.simple7702AccountAddress,
+        web3: web3
+      )
+      
+      let needsDelegation: Bool
+      switch needsDelegationResult {
+      case .success(let needs):
+        needsDelegation = needs
       case .failure:
         return ["error": "Failed to check code for user's wallet"]
       }
@@ -1508,14 +1497,6 @@ extension Data {
   }
 }
 
-extension BigUInt {
-  fileprivate static func fromHexQuantity(_ hex: String) -> BigUInt? {
-    guard !hex.isEmpty else { return nil }
-    let s = hex.hasPrefix("0x") ? String(hex.dropFirst(2)) : hex
-    return BigUInt(s, radix: 16)
-  }
-}
-
 private func awaitPromise<T>(_ promise: Promise<T>) -> Swift.Result<T, Error> {
   let semaphore = DispatchSemaphore(value: 0)
   var result: Swift.Result<T, Error>!
@@ -1616,54 +1597,55 @@ private func createExecuteBatchTransaction(
   // Use provided transaction nonce computed earlier to avoid race conditions
   let nonce: EthereumQuantity = txNonce
 
-  // Get EIP-1559 fee data
-  let maxFeePerGas: EthereumQuantity
-  let maxPriorityFeePerGasQty: BigUInt
-
-  // Get gas price (simplified - using legacy gas price for now)
-  switch awaitPromise(web3.eth.gasPrice()) {
-  case .success(let gp):
-    // Use EIP-1559 style fees if available; otherwise default to legacy gasPrice
-    maxFeePerGas = gp
-    // Derive a reasonable priority fee (min(gp/2, 2 gwei))
-    let twoGwei = BigUInt(2_000_000_000)
-    let half = gp.quantity / 2
-    maxPriorityFeePerGasQty = half < twoGwei ? half : twoGwei
-  case .failure(let err):
+  // Fetch gas prices
+  let gasPricesResult = GasEstimationUtil.fetchGasPrices(web3: web3)
+  guard case .success(let gasPrices) = gasPricesResult else {
     throw NSError(
       domain: "Transaction", code: 2,
-      userInfo: [NSLocalizedDescriptionKey: "Failed to get gas price: \(err.localizedDescription)"])
+      userInfo: [NSLocalizedDescriptionKey: "Failed to get gas price"])
   }
 
   // Create transaction data
   let txData = try EthereumData(data)
-  // Estimate gas (use default if estimation fails, for debugging)
-  var gasLimit: EthereumQuantity
-  let estimate = awaitPromise(
-    web3.eth.estimateGas(
-      call: EthereumCall(
-        from: fromAddr, to: toAddr, gas: nil, gasPrice: nil,
-        value: EthereumQuantity(quantity: BigUInt.zero), data: txData)))
-  switch estimate {
-  case .success(let est):
-    gasLimit = est
-  case .failure(let err):
+
+  // Estimate gas
+  let estimateResult = GasEstimationUtil.estimateGasLimit(
+    web3: web3,
+    from: fromAddr,
+    to: toAddr,
+    value: BigUInt.zero,
+    data: txData
+  )
+
+  guard case .success(var gasLimit) = estimateResult else {
     throw NSError(
       domain: "Transaction", code: 4,
-      userInfo: [NSLocalizedDescriptionKey: "Gas estimation failed: \(err.localizedDescription)"])
+      userInfo: [NSLocalizedDescriptionKey: "Gas estimation failed"])
   }
 
-  // Add intrinsic overhead for EIP-7702 (base tx cost + per-authorization cost)
+  // Add EIP-7702 overhead if needed
   if needsDelegation {
-    let authOverhead = BigUInt(25_000) // single authorization
-    let baseOverhead = BigUInt(21_000)
-    let safetyMargin = BigUInt(50_000)
-    let newLimit = gasLimit.quantity + authOverhead + baseOverhead + safetyMargin
-    gasLimit = EthereumQuantity(quantity: newLimit)
+    gasLimit = GasEstimationUtil.applyEIP7702Overhead(
+      to: gasLimit,
+      authorizationCount: 1,
+      includeSafetyMargin: true
+    )
   }
 
-  // Check if balance is sufficient for estimated transaction cost
-  let estimatedGasCost = gasLimit.quantity * maxFeePerGas.quantity
+  // Calculate total cost
+  let gasEstimate = GasEstimationUtil.calculateTotalCost(
+    gasLimit: gasLimit,
+    gasPrices: gasPrices,
+    transactionValue: BigUInt.zero,
+    transactionType: needsDelegation ? .eip7702 : .eip1559
+  )
+
+  let estimatedGasCost = gasEstimate.estimatedGasCost
+  
+  // Prepare EIP-1559 fee data for transaction
+  let maxFeePerGas = EthereumQuantity(quantity: gasPrices.maxFeePerGas)
+  let maxPriorityFeePerGasQty = gasPrices.maxPriorityFeePerGas
+  let gasLimitQty = EthereumQuantity(quantity: gasLimit)
 
   if currentBalance < estimatedGasCost {
     let shortfall = estimatedGasCost - currentBalance
@@ -1689,7 +1671,7 @@ private func createExecuteBatchTransaction(
       contractAddress: AuthorizationsUtil.simple7702AccountAddress,
       chainId: chainIdBig,
       txNonce: txNonce.quantity,
-      gasLimit: gasLimit.quantity,
+      gasLimit: gasLimit,
       maxFeePerGas: maxFeePerGas.quantity,
       maxPriorityFeePerGas: maxPriorityFeePerGasQty,
       data: data
@@ -1715,7 +1697,7 @@ private func createExecuteBatchTransaction(
   let tx = EthereumTransaction(
     nonce: nonce,
     gasPrice: maxFeePerGas,
-    gasLimit: gasLimit,
+    gasLimit: gasLimitQty,
     to: toAddr,
     value: EthereumQuantity(quantity: BigUInt.zero),
     data: txData
@@ -1775,6 +1757,200 @@ private func createExecuteBatchTransaction(
       domain: "Transaction", code: 3,
       userInfo: [NSLocalizedDescriptionKey: "Failed to send transaction: \(e.localizedDescription)"]
     )
+  }
+}
+
+// MARK: - Gas Estimation
+
+private func handleEstimateTransaction(params: [Any]?) async -> [String: Any] {
+  guard let params = params, !params.isEmpty else {
+    return ["error": "Invalid params: expected transaction object or batch params"]
+  }
+
+  let firstParam = params[0]
+
+  // Check if this is a batch call (wallet_sendCalls format)
+  if let batchParams = firstParam as? [String: Any],
+     let calls = batchParams["calls"] as? [[String: Any]] {
+    return await estimateBatchTransaction(batchParams: batchParams, calls: calls)
+  }
+
+  // Otherwise treat as single transaction (eth_sendTransaction format)
+  if let txParams = firstParam as? [String: Any] {
+    return await estimateSingleTransaction(txParams: txParams)
+  }
+
+  return ["error": "Invalid params format"]
+}
+
+private func estimateSingleTransaction(txParams: [String: Any]) async -> [String: Any] {
+  // Extract transaction parameters
+  guard let fromHex = txParams["from"] as? String else {
+    return ["error": "Missing 'from' address"]
+  }
+
+  let toHex = txParams["to"] as? String
+  let valueHex = txParams["value"] as? String ?? "0x0"
+  let dataHex = txParams["data"] as? String ?? txParams["input"] as? String ?? "0x"
+  let gasHex = txParams["gas"] as? String
+  let gasPriceHex = txParams["gasPrice"] as? String
+  let maxFeePerGasHex = txParams["maxFeePerGas"] as? String
+  let maxPriorityFeePerGasHex = txParams["maxPriorityFeePerGas"] as? String
+
+  do {
+    let (rpcURL, _) = Constants.Networks.currentNetwork()
+    let web3 = Web3(rpcURL: rpcURL)
+
+    let fromAddr = try EthereumAddress(hex: fromHex, eip55: false)
+    let toAddr = (toHex != nil && !(toHex!).isEmpty)
+      ? (try? EthereumAddress(hex: toHex!, eip55: false))
+      : nil
+
+    let weiValue = BigUInt.fromHexQuantity(valueHex) ?? BigUInt.zero
+
+    let transactionData: EthereumData? = {
+      guard dataHex != "0x", !dataHex.isEmpty else { return nil }
+      guard let rawData = Data(hexString: dataHex) else { return nil }
+      return try? EthereumData(rawData)
+    }()
+
+    // Gas limit: provided or estimate
+    let gasLimitQty: BigUInt
+    if let gasHex = gasHex, let g = BigUInt.fromHexQuantity(gasHex) {
+      gasLimitQty = g
+    } else {
+      guard let toForEstimate = toAddr else {
+        return ["error": "Missing 'to' address for gas estimation"]
+      }
+
+      let estimateResult = GasEstimationUtil.estimateGasLimit(
+        web3: web3,
+        from: fromAddr,
+        to: toForEstimate,
+        value: weiValue,
+        data: transactionData
+      )
+
+      switch estimateResult {
+      case .success(let estimate):
+        gasLimitQty = estimate
+      case .failure(let error):
+        return ["error": "Failed to estimate gas: \(error.localizedDescription)"]
+      }
+    }
+
+    // Fetch gas prices
+    let gasPricesResult = GasEstimationUtil.getGasPrices(
+      web3: web3,
+      maxFeePerGasHex: maxFeePerGasHex,
+      maxPriorityFeePerGasHex: maxPriorityFeePerGasHex,
+      gasPriceHex: gasPriceHex
+    )
+
+    let gasPrices: GasEstimationUtil.GasPrices
+    switch gasPricesResult {
+    case .success(let prices):
+      gasPrices = prices
+    case .failure(let error):
+      return ["error": "Failed to get gas price: \(error.localizedDescription)"]
+    }
+
+    // Calculate total cost
+    let gasEstimate = GasEstimationUtil.calculateTotalCost(
+      gasLimit: gasLimitQty,
+      gasPrices: gasPrices,
+      transactionValue: weiValue,
+      transactionType: gasPrices.isEIP1559 ? .eip1559 : .legacy
+    )
+
+    return ["result": gasEstimate.toDictionary()]
+
+  } catch {
+    return ["error": "Estimation failed: \(error.localizedDescription)"]
+  }
+}
+
+private func estimateBatchTransaction(
+  batchParams: [String: Any],
+  calls: [[String: Any]]
+) async -> [String: Any] {
+  guard let fromAddress = batchParams["from"] as? String else {
+    return ["error": "Missing 'from' address in batch params"]
+  }
+
+  do {
+    let (rpcURL, chainIdBig) = Constants.Networks.currentNetwork()
+    let web3 = Web3(rpcURL: rpcURL)
+
+    let fromAddr = try EthereumAddress(hex: fromAddress, eip55: false)
+    let simple7702Addr = try EthereumAddress(hex: AuthorizationsUtil.simple7702AccountAddress, eip55: false)
+
+    // Check if delegation is needed
+    let needsDelegationResult = AuthorizationsUtil.checkIfNeedsDelegation(
+      addressHex: fromAddress,
+      targetContractHex: AuthorizationsUtil.simple7702AccountAddress,
+      web3: web3
+    )
+    
+    let needsDelegation: Bool
+    switch needsDelegationResult {
+    case .success(let needs):
+      needsDelegation = needs
+    case .failure:
+      return ["error": "Failed to check code for user's wallet"]
+    }
+
+    // Encode batch execution calldata (simplified - use first call for estimation)
+    // In production, you'd want to encode all calls properly
+    guard let firstCall = calls.first,
+          let toHex = firstCall["to"] as? String else {
+      return ["error": "Invalid batch call format"]
+    }
+
+    let toAddr = try EthereumAddress(hex: toHex, eip55: false)
+    let dataHex = firstCall["data"] as? String ?? "0x"
+    let txData = try EthereumData(Data(hexString: dataHex) ?? Data())
+
+    // Estimate gas
+    let estimateResult = GasEstimationUtil.estimateGasLimit(
+      web3: web3,
+      from: fromAddr,
+      to: toAddr,
+      value: BigUInt.zero,
+      data: txData
+    )
+
+    guard case .success(var gasLimit) = estimateResult else {
+      return ["error": "Failed to estimate gas for batch transaction"]
+    }
+
+    // Add EIP-7702 overhead if needed
+    if needsDelegation {
+      gasLimit = GasEstimationUtil.applyEIP7702Overhead(
+        to: gasLimit,
+        authorizationCount: 1,
+        includeSafetyMargin: true
+      )
+    }
+
+    // Fetch gas prices
+    let gasPricesResult = GasEstimationUtil.fetchGasPrices(web3: web3)
+    guard case .success(let gasPrices) = gasPricesResult else {
+      return ["error": "Failed to get gas price"]
+    }
+
+    // Calculate total cost (batch calls typically don't transfer value)
+    let gasEstimate = GasEstimationUtil.calculateTotalCost(
+      gasLimit: gasLimit,
+      gasPrices: gasPrices,
+      transactionValue: BigUInt.zero,
+      transactionType: needsDelegation ? .eip7702 : .eip1559
+    )
+
+    return ["result": gasEstimate.toDictionary()]
+
+  } catch {
+    return ["error": "Batch estimation failed: \(error.localizedDescription)"]
   }
 }
 

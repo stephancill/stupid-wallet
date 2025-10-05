@@ -104,6 +104,47 @@ enum AuthorizationsUtil {
         return results.sorted { $0.chainName < $1.chainName }
     }
 
+    /// Check if an address needs delegation to a specific contract
+    /// Returns true if delegation is needed (empty code, wrong delegation, or non-delegation code)
+    /// Returns false if already properly delegated to the target contract
+    static func checkIfNeedsDelegation(
+        addressHex: String,
+        targetContractHex: String,
+        web3: Web3
+    ) -> Swift.Result<Bool, Error> {
+        do {
+            let address = try EthereumAddress(hex: addressHex, eip55: false)
+            let targetContract = try EthereumAddress(hex: targetContractHex, eip55: false)
+            let codeResult = awaitPromise(web3.eth.getCode(address: address, block: .latest))
+            
+            switch codeResult {
+            case .success(let code):
+                if code.bytes.isEmpty {
+                    // Empty code - needs delegation
+                    return .success(true)
+                } else if code.bytes.count == 23 && code.bytes.starts(with: [0xef, 0x01, 0x00]) {
+                    // Check if already delegated to target contract
+                    let delegatedAddress = Array(code.bytes[3...])
+                    let expectedAddress = targetContract.rawAddress
+                    if delegatedAddress != expectedAddress {
+                        // Delegated to wrong address - needs re-delegation
+                        return .success(true)
+                    } else {
+                        // Already properly delegated
+                        return .success(false)
+                    }
+                } else {
+                    // Has code but not a delegation indicator - needs delegation
+                    return .success(true)
+                }
+            case .failure(let error):
+                return .failure(error)
+            }
+        } catch {
+            return .failure(error)
+        }
+    }
+
     /// Reset authorization by signing a new authorization to the zero address
     static func resetAuthorization(for address: String, on chainId: BigUInt) async throws -> String {
         let zeroAddress = "0x0000000000000000000000000000000000000000"
@@ -154,48 +195,35 @@ enum AuthorizationsUtil {
         // Create a minimal transaction to carry the authorization
         let authorizations = [authorization]
 
-        // Estimate gas for the authorization transaction
-        let estimatedGasLimit: BigUInt
-        do {
-            let dummyTx = EthereumCall(
-                from: fromAddr,
-                to: fromAddr,
-                gas: nil,
-                gasPrice: nil,
-                value: EthereumQuantity(quantity: BigUInt.zero),
-                data: try EthereumData(Data()) // Empty data for estimation
-            )
+        // Estimate gas with EIP-7702 overhead
+        let estimateResult = GasEstimationUtil.estimateGasLimit(
+            web3: web3,
+            from: fromAddr,
+            to: fromAddr, // Self-transaction
+            value: BigUInt.zero,
+            data: try EthereumData(Data()) // Empty data for estimation
+        )
 
-            let estimateResult = awaitPromise(web3.eth.estimateGas(call: dummyTx), timeout: 15.0)
-            switch estimateResult {
-            case .success(let estimated):
-                // Add overhead for EIP-7702 authorization (base + per-auth + safety)
-                let authOverhead = BigUInt(25_000 * authorizations.count)
-                let baseOverhead = BigUInt(21_000)
-                let safetyMargin = BigUInt(20_000)
-                estimatedGasLimit = estimated.quantity + authOverhead + baseOverhead + safetyMargin
-            case .failure(let error):
-                throw NSError(domain: "Authorization", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to estimate gas for authorization transaction: \(error.localizedDescription)"])
-            }
-        } catch {
-            throw NSError(domain: "Authorization", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to prepare gas estimation for authorization transaction: \(error.localizedDescription)"])
+        guard case .success(let baseEstimate) = estimateResult else {
+            throw NSError(domain: "Authorization", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "Failed to estimate gas"])
         }
 
-        // Get current gas prices from the network
-        let gasPriceResult = awaitPromise(web3.eth.gasPrice())
-        let maxFeePerGas: BigUInt
-        let maxPriorityFeePerGas: BigUInt
+        let estimatedGasLimit = GasEstimationUtil.applyEIP7702Overhead(
+            to: baseEstimate,
+            authorizationCount: authorizations.count,
+            includeSafetyMargin: true
+        )
 
-        switch gasPriceResult {
-        case .success(let gasPrice):
-            // Use network gas price with reasonable multipliers
-            // maxFeePerGas: 2x network gas price (capped at 100 gwei to prevent excessive fees)
-            let networkGasPrice = gasPrice.quantity
-            maxFeePerGas = min(networkGasPrice * 2, BigUInt(100_000_000_000)) // 100 gwei max
-            maxPriorityFeePerGas = min(networkGasPrice / 2, BigUInt(2_000_000_000)) // 2 gwei max priority
-        case .failure(let error):
-            throw NSError(domain: "Authorization", code: 4, userInfo: [NSLocalizedDescriptionKey: "Failed to get gas price from network: \(error.localizedDescription)"])
+        // Fetch gas prices
+        let gasPricesResult = GasEstimationUtil.fetchGasPrices(web3: web3)
+        guard case .success(let gasPrices) = gasPricesResult else {
+            throw NSError(domain: "Authorization", code: 4,
+                          userInfo: [NSLocalizedDescriptionKey: "Failed to get gas price"])
         }
+
+        let maxFeePerGas = gasPrices.maxFeePerGas
+        let maxPriorityFeePerGas = gasPrices.maxPriorityFeePerGas
 
         let rawTx = try serializeEIP7702Transaction(
             nonce: EthereumQuantity(quantity: txNonce),

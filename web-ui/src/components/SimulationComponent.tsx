@@ -644,9 +644,22 @@ export function SimulationComponent({
     </div>
   );
 
+  // Check if we have any content to display
+  const hasContent =
+    (decodedErrors && decodedErrors.length > 0) ||
+    userTransfers.length > 0 ||
+    otherEvents.length > 0;
+
   return (
     <div className="space-y-4">
       <div className="text-sm font-medium text-foreground">Simulation</div>
+
+      {/* Empty State */}
+      {!hasContent && (
+        <div className="text-xs bg-muted p-3 rounded text-muted-foreground text-center">
+          No events detected
+        </div>
+      )}
 
       {/* Errors */}
       {decodedErrors && decodedErrors.length > 0 && (
