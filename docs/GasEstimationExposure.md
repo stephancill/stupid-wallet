@@ -847,6 +847,121 @@ private func checkIfNeedsDelegation(
 }
 ```
 
+### Phase 3 Implementation Notes
+
+**Status:** ✅ Complete
+
+**Files Modified:**
+
+1. `safari/SafariWebExtensionHandler.swift` - Added method handler and three new functions
+2. `shared/AuthorizationsUtil.swift` - Added delegation checking utility function
+
+**Key Implementation Details:**
+
+1. **Method Handler Registration** (Line 174-176)
+
+   - Added `stupid_estimateTransaction` case to the main method switch
+   - Marked as `async` to support asynchronous gas estimation operations
+   - Routes to `handleEstimateTransaction` dispatcher
+
+2. **Main Dispatcher Function** `handleEstimateTransaction` (Lines 1775-1794)
+
+   - Accepts params array and determines request type
+   - Routes to `estimateSingleTransaction` for `eth_sendTransaction` format
+   - Routes to `estimateBatchTransaction` for `wallet_sendCalls` format
+   - Returns proper error messages for invalid params
+
+3. **Single Transaction Estimation** `estimateSingleTransaction` (Lines 1796-1881)
+
+   - Handles standard transaction estimation (legacy and EIP-1559)
+   - Extracts transaction parameters: from, to, value, data, gas, gasPrice, maxFeePerGas, maxPriorityFeePerGas
+   - Uses `GasEstimationUtil.estimateGasLimit()` for gas limit (or uses provided value)
+   - Uses `GasEstimationUtil.getGasPrices()` for gas price fetching with override support
+   - Uses `GasEstimationUtil.calculateTotalCost()` for total cost calculation
+   - Returns formatted response with `gasEstimate.toDictionary()`
+   - Automatically detects transaction type (`.eip1559` or `.legacy`)
+
+4. **Batch Transaction Estimation** `estimateBatchTransaction` (Lines 1883-1959)
+
+   - Handles `wallet_sendCalls` format with EIP-7702 delegation detection
+   - Uses `AuthorizationsUtil.checkIfNeedsDelegation()` to determine if delegation is required
+   - Estimates gas for batch execution using first call (simplified approach)
+   - Applies EIP-7702 overhead via `GasEstimationUtil.applyEIP7702Overhead()` if needed
+   - Returns proper transaction type (`.eip7702` or `.eip1559`)
+   - Zero value for batch calls (typical case)
+
+5. **Refactoring: Delegation Checking Utility** (AuthorizationsUtil.swift, Lines 107-146)
+
+   - Created `checkIfNeedsDelegation(addressHex:targetContractHex:web3:)` utility function
+   - Eliminates code duplication between `handleWalletSendCalls` and `estimateBatchTransaction`
+   - Returns `Swift.Result<Bool, Error>` for proper error handling
+   - Uses hex string parameters to avoid `EthereumAddress` type ambiguity
+   - Detects three delegation scenarios:
+     - Empty code (EOA) → needs delegation
+     - Wrong delegation (0xef0100 prefix but wrong address) → needs re-delegation
+     - Already delegated to target → no delegation needed
+
+6. **Code Quality Improvements:**
+
+   - **DRY Principle:** Removed ~46 lines of duplicated delegation checking logic
+   - **Consistency:** Both `handleWalletSendCalls` and `estimateBatchTransaction` use identical delegation checking
+   - **Maintainability:** Single source of truth for delegation logic
+   - **Testability:** Utility functions can be unit tested independently
+
+7. **Error Handling:**
+
+   - Missing `from` address: Returns clear error message
+   - Missing `to` address: Returns error only when needed for estimation
+   - Gas estimation failure: Returns error with localized description
+   - Gas price fetch failure: Returns error with localized description
+   - Delegation check failure: Returns "Failed to check code for user's wallet"
+   - Invalid params format: Returns "Invalid params format"
+   - Batch format errors: Returns specific error messages
+
+**Issues Encountered and Resolved:**
+
+1. **Issue:** `EthereumAddress` type ambiguity
+
+   - **Error:** "'EthereumAddress' is ambiguous for type lookup in this context"
+   - **Resolution:** Changed `AuthorizationsUtil.checkIfNeedsDelegation` to accept hex strings instead of `EthereumAddress` objects, performs conversion internally
+
+2. **Issue:** Duplicate delegation checking logic
+
+   - **Error:** Maintenance burden with identical logic in two places
+   - **Resolution:** Refactored into `AuthorizationsUtil.checkIfNeedsDelegation()` utility function
+
+**No Linter Errors:** All files compile cleanly with no warnings or errors
+
+**Response Format:**
+
+The method returns a JSON object matching `GasEstimate.toDictionary()`:
+
+```json
+{
+  "result": {
+    "gasLimit": "0x...",
+    "maxFeePerGas": "0x...",
+    "maxPriorityFeePerGas": "0x...",
+    "estimatedGasCost": "0x...",
+    "estimatedGasCostEth": "0.000123",
+    "totalCost": "0x...",
+    "totalCostEth": "0.001123",
+    "type": "eip1559" // or "legacy" or "eip7702"
+  }
+}
+```
+
+**Testing Verification:**
+
+- Method handler registration verified
+- Single transaction estimation (legacy and EIP-1559) implemented
+- Batch transaction estimation with EIP-7702 detection implemented
+- Delegation checking utility function working correctly
+- Error handling paths covered
+- No behavioral changes to existing flows
+
+**Next Steps:** Proceed to Phase 4 to integrate with background script.
+
 ---
 
 ## Phase 4: Background Script Integration

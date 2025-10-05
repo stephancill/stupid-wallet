@@ -104,6 +104,47 @@ enum AuthorizationsUtil {
         return results.sorted { $0.chainName < $1.chainName }
     }
 
+    /// Check if an address needs delegation to a specific contract
+    /// Returns true if delegation is needed (empty code, wrong delegation, or non-delegation code)
+    /// Returns false if already properly delegated to the target contract
+    static func checkIfNeedsDelegation(
+        addressHex: String,
+        targetContractHex: String,
+        web3: Web3
+    ) -> Swift.Result<Bool, Error> {
+        do {
+            let address = try EthereumAddress(hex: addressHex, eip55: false)
+            let targetContract = try EthereumAddress(hex: targetContractHex, eip55: false)
+            let codeResult = awaitPromise(web3.eth.getCode(address: address, block: .latest))
+            
+            switch codeResult {
+            case .success(let code):
+                if code.bytes.isEmpty {
+                    // Empty code - needs delegation
+                    return .success(true)
+                } else if code.bytes.count == 23 && code.bytes.starts(with: [0xef, 0x01, 0x00]) {
+                    // Check if already delegated to target contract
+                    let delegatedAddress = Array(code.bytes[3...])
+                    let expectedAddress = targetContract.rawAddress
+                    if delegatedAddress != expectedAddress {
+                        // Delegated to wrong address - needs re-delegation
+                        return .success(true)
+                    } else {
+                        // Already properly delegated
+                        return .success(false)
+                    }
+                } else {
+                    // Has code but not a delegation indicator - needs delegation
+                    return .success(true)
+                }
+            case .failure(let error):
+                return .failure(error)
+            }
+        } catch {
+            return .failure(error)
+        }
+    }
+
     /// Reset authorization by signing a new authorization to the zero address
     static func resetAuthorization(for address: String, on chainId: BigUInt) async throws -> String {
         let zeroAddress = "0x0000000000000000000000000000000000000000"
