@@ -206,6 +206,34 @@ private func handleGetBaseCurrency() async -> [String: Any] {
 }
 ```
 
+### 1.3 Implementation Notes (Phase 1)
+
+- **Function selector (keccak256)**:
+
+  - Hashes the UTF‑8 function signature `"latestRoundData()"` using CryptoSwift `sha3(.keccak256)`.
+  - Extracts the first 4 bytes via `Array(hash.prefix(4))` and wraps in `Data` to avoid Swift's “Ambiguous use of 'prefix'” error.
+  - Builds a raw `EthereumCall` for a lightweight view call without full ABI definitions.
+
+- **Decoding and validation**:
+
+  - Decodes the return bytes manually; reads `answer` (int256) at bytes 32–64.
+  - Converts to `BigInt` then `Double`, dividing by 10^8 (Chainlink decimals).
+  - Validates the resulting USD price is within $100–$100,000; otherwise throws.
+
+- **Caching**:
+
+  - In‑memory cache in `CurrencyService` with a 5‑minute TTL; `clearCache()` invalidates.
+  - Prevents unnecessary RPC calls during a session.
+
+- **Networking**:
+
+  - Uses public Ethereum mainnet RPC: `https://eth.llamarpc.com` for read‑only calls.
+
+- **Safari RPC handler**:
+  - Adds `"stupid_getBaseCurrency"` to the request switch; handled as a fast method (no user confirmation).
+  - `handleGetBaseCurrency()` returns `{ symbol: "USD", rate, timestamp }` on success.
+  - Errors are logged using `Logger(subsystem:..., category:...)` with `privacy: .public` and returned as `{ error }` without sensitive data.
+
 ## Phase 2: Frontend Implementation (React/TypeScript)
 
 ### 2.1 Type Definitions

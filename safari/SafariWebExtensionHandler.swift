@@ -174,6 +174,8 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     case "stupid_estimateTransaction":
       let params = messageDict["params"] as? [Any]
       return await handleEstimateTransaction(params: params)
+    case "stupid_getBaseCurrency":
+      return await handleGetBaseCurrency()
     default:
       return ["error": "Method \(method) not supported"]
     }
@@ -1879,11 +1881,10 @@ private func estimateBatchTransaction(
   }
 
   do {
-    let (rpcURL, chainIdBig) = Constants.Networks.currentNetwork()
+    let (rpcURL, _) = Constants.Networks.currentNetwork()
     let web3 = Web3(rpcURL: rpcURL)
 
     let fromAddr = try EthereumAddress(hex: fromAddress, eip55: false)
-    let simple7702Addr = try EthereumAddress(hex: AuthorizationsUtil.simple7702AccountAddress, eip55: false)
 
     // Check if delegation is needed
     let needsDelegationResult = AuthorizationsUtil.checkIfNeedsDelegation(
@@ -1951,6 +1952,25 @@ private func estimateBatchTransaction(
 
   } catch {
     return ["error": "Batch estimation failed: \(error.localizedDescription)"]
+  }
+}
+
+private func handleGetBaseCurrency() async -> [String: Any] {
+  do {
+    let rate = try await CurrencyService.shared.fetchEthUsdPrice()
+    let timestamp = ISO8601DateFormatter().string(from: Date())
+
+    return [
+      "result": [
+        "symbol": "USD",
+        "rate": rate,
+        "timestamp": timestamp
+      ]
+    ]
+  } catch {
+    let logger = Logger(subsystem: "co.za.stephancill.stupid-wallet", category: "SafariWebExtensionHandler")
+    logger.error("Failed to fetch currency rate: \(error.localizedDescription, privacy: .public)")
+    return ["error": "Failed to fetch currency rate: \(error.localizedDescription)"]
   }
 }
 
