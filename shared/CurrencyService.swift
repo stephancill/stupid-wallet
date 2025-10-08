@@ -81,10 +81,8 @@ final class CurrencyService {
         let answerBytes = Array(bytes[32..<64])
         let answer = BigInt(Data(answerBytes))
 
-        // Chainlink ETH/USD feed result needs to be divided by 1e(18-6) = 1e12
-        // Convert to Double: price = answer / 10^11
-        let divisor = BigInt(10).power(11)
-        let price = Double(answer) / Double(divisor)
+        let numerator = BigInt(10).power(18)
+        let price = Double(numerator / (BigInt(answer)))
 
         // Update cache
         cachedRate = price

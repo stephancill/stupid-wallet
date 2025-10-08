@@ -138,6 +138,9 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
       return handleNetVersion()
     case "eth_blockNumber":
       return handleBlockNumber()
+    case "eth_estimateGas":
+      let params = messageDict["params"] as? [Any]
+      return await handleEstimateGas(params: params)
     case "eth_getTransactionByHash":
       let params = messageDict["params"] as? [Any]
       return await handleGetTransactionByHash(params: params)
@@ -230,6 +233,28 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
       return ["result": num.hex()]
     case .failure:
       return ["error": "Failed to get block number"]
+    }
+  }
+
+  private func handleEstimateGas(params: [Any]?) async -> [String: Any] {
+    guard let params = params, params.count >= 1 else {
+      return ["error": "Invalid eth_estimateGas params"]
+    }
+    let (rpcURL, _) = Constants.Networks.currentNetwork()
+    guard let url = URL(string: rpcURL) else {
+      return ["error": "Invalid RPC URL"]
+    }
+    do {
+      // Use shared JSONRPC utility to query node directly, return raw RPC response
+      let result: Any = try await JSONRPC.request(
+        rpcURL: url, method: "eth_estimateGas", params: params)
+      if let hexString = result as? String {
+        return ["result": hexString]
+      } else {
+        return ["error": "Unexpected response type for eth_estimateGas"]
+      }
+    } catch {
+      return ["error": error.localizedDescription]
     }
   }
 

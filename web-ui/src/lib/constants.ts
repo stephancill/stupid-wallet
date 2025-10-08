@@ -14,6 +14,7 @@ export const FAST_METHODS = [
   "eth_chainId",
   "net_version",
   "eth_blockNumber",
+  "eth_estimateGas",
   "eth_getTransactionByHash",
   "eth_getTransactionReceipt",
   "eth_getBlockByNumber",

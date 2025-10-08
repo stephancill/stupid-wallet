@@ -168,6 +168,7 @@ async function handleWalletRequest(message, sender, sendResponse) {
       case "eth_chainId":
       case "net_version":
       case "eth_blockNumber":
+      case "eth_estimateGas":
       case "eth_getTransactionByHash":
       case "eth_getTransactionReceipt":
       case "eth_getBlockByNumber":
