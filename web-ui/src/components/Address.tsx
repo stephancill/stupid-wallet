@@ -76,14 +76,6 @@ export function Address({
     }
   }
 
-  console.log("displayText", displayText, {
-    address,
-    ensName,
-    showContractName,
-    metadata,
-    abiData,
-  });
-
   const shouldUseMono = mono;
 
   const content = noLink ? (

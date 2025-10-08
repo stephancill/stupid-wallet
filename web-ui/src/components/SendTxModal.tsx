@@ -1,4 +1,5 @@
 import { CallDecoder } from "@/components/CallDecoder";
+import { EthValue } from "@/components/EthValue";
 import { RequestModal } from "@/components/RequestModal";
 import { SimulationComponent } from "@/components/SimulationComponent";
 import { Button } from "@/components/ui/button";
@@ -302,7 +303,9 @@ export function SendTxModal({
               </div>
             </div>
             <div className="text-sm text-muted-foreground">Value</div>
-            <div className="text-sm">{totalValueEth} ETH</div>
+            <div className="text-sm">
+              <EthValue value={totalValueEth} />
+            </div>
             <div className="text-sm text-muted-foreground">Network Fee</div>
             <div className="text-sm">
               {isGasLoading ? (
@@ -312,7 +315,7 @@ export function SendTxModal({
                   Unable to estimate
                 </span>
               ) : (
-                <>{gasEstimation.estimatedGasCostEth} ETH</>
+                <EthValue value={gasEstimation.estimatedGasCostEth} />
               )}
             </div>
           </div>

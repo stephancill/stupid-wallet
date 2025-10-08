@@ -10,9 +10,9 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    removeConsole({
-      includes: !isDev ? ["log", "info", "debug"] : [],
-    }),
+    // removeConsole({
+    //   includes: !isDev ? ["log", "info", "debug"] : [],
+    // }),
   ],
   root: ".",
   define: {
