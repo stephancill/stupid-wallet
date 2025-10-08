@@ -23,6 +23,8 @@ export const FAST_METHODS = [
   "wallet_getCapabilities",
   "wallet_getCallsStatus",
   "stupid_estimateTransaction",
+  "stupid_getBaseCurrency",
+  "stupid_getWalletAddress",
 ] as const;
 
 // Note: supported methods are also independently declared in

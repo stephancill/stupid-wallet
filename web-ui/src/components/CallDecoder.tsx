@@ -1,4 +1,5 @@
 import Address from "@/components/Address";
+import { EthValue } from "@/components/EthValue";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useContractABI } from "@/hooks/use-contract-abi";
 import { useContractMetadata } from "@/hooks/use-contract-metadata";
@@ -249,7 +250,7 @@ export function CallDecoder({
                 •
               </span>
               <span className="font-medium text-sm inline-flex items-center">
-                {valueEth} ETH
+                <EthValue value={valueEth} />
               </span>
             </>
           )}
@@ -279,7 +280,9 @@ export function CallDecoder({
           {metadata?.name ? `(${metadata.name})` : null}
         </div>
         <div className="text-muted-foreground">Value</div>
-        <div>{valueEth} ETH</div>
+        <div>
+          <EthValue value={valueEth} />
+        </div>
         <div className="text-muted-foreground">Data</div>
       </div>
 

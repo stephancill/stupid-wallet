@@ -8,3 +8,9 @@ export interface GasEstimation {
   totalCostEth: string; // decimal string
   type: "legacy" | "eip1559" | "eip7702";
 }
+
+export interface BaseCurrency {
+  symbol: string;
+  rate: number;
+  timestamp: string;
+}

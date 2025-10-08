@@ -229,9 +229,15 @@ private func handleGetBaseCurrency() async -> [String: Any] {
 
   - Uses public Ethereum mainnet RPC: `https://eth.llamarpc.com` for read‑only calls.
 
-- **Safari RPC handler**:
-  - Adds `"stupid_getBaseCurrency"` to the request switch; handled as a fast method (no user confirmation).
-  - `handleGetBaseCurrency()` returns `{ symbol: "USD", rate, timestamp }` on success.
+- **Background script routing**:
+
+  - Added `"stupid_getBaseCurrency"` to the fast methods case in `background.js` (line 179).
+  - Routes to native handler via `callNative()` with method, params, and siteMetadata.
+  - No user confirmation required; returns immediately with result or error.
+
+- **Safari native handler**:
+  - Adds `"stupid_getBaseCurrency"` to the request switch in `SafariWebExtensionHandler.swift`.
+  - `handleGetBaseCurrency()` returns `{ result: { symbol: "USD", rate, timestamp } }` on success.
   - Errors are logged using `Logger(subsystem:..., category:...)` with `privacy: .public` and returned as `{ error }` without sensitive data.
 
 ## Phase 2: Frontend Implementation (React/TypeScript)
@@ -292,28 +298,13 @@ export function useBaseCurrency() {
 
 **Location**: `web-ui/src/components/EthValue.tsx` (new file)
 
-**Purpose**: Reusable component that displays ETH values with USD tooltip on hover.
-
-#### Prerequisites
-
-Install shadcn/ui Tooltip component:
-
-```bash
-cd web-ui
-bun x shadcn-ui@latest add tooltip
-```
+**Purpose**: Reusable component that displays ETH values with clickable toggle to show USD equivalent.
 
 #### Implementation
 
 ```typescript
-import { formatValue } from "@/lib/utils";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { useBaseCurrency } from "@/hooks/use-base-currency";
+import { useState } from "react";
 
 interface EthValueProps {
   /** ETH amount as string (e.g., "1.234567") */
@@ -325,23 +316,24 @@ interface EthValueProps {
 }
 
 /**
- * Displays an ETH value with a USD tooltip on hover
+ * Displays an ETH value that can be clicked to toggle USD display
  *
  * @example
  * <EthValue value="1.234567" />
- * // Displays: 1.234567 ETH
- * // Tooltip on hover: $2,469.13
+ * // Displays: 1.234567 ETH (with dashed underline)
+ * // Click to toggle: $2,469.13
  *
  * @example
  * <EthValue value="0.05" showSymbol={false} />
- * // Displays: 0.05 (no tooltip if exchange rate unavailable)
+ * // Displays: 0.05 (no toggle if exchange rate unavailable)
  */
 export function EthValue({
   value,
   showSymbol = true,
   className,
 }: EthValueProps) {
-  const { data: currency, isLoading } = useBaseCurrency();
+  const { data: currency } = useBaseCurrency();
+  const [showUsd, setShowUsd] = useState(false);
 
   const ethValue = parseFloat(value);
   const usdValue =
@@ -356,7 +348,7 @@ export function EthValue({
         }).format(usdValue)
       : null;
 
-  // If no currency data available, just show ETH value without tooltip
+  // If no currency data available, just show ETH value without toggle
   if (!formattedUsd) {
     return (
       <span className={className}>
@@ -366,21 +358,57 @@ export function EthValue({
   }
 
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className={className}>
-            {value} {showSymbol && "ETH"}
-          </span>
-        </TooltipTrigger>
-        <TooltipContent>
-          <p className="text-xs">{formattedUsd}</p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <button
+      type="button"
+      onClick={() => setShowUsd(!showUsd)}
+      className={`border-none bg-transparent p-0 cursor-pointer underline decoration-dashed decoration-muted-foreground/40 hover:decoration-muted-foreground/60 transition-colors ${className}`}
+      title="Click to toggle currency"
+    >
+      {showUsd ? formattedUsd : `${value} ${showSymbol ? "ETH" : ""}`}
+    </button>
   );
 }
 ```
+
+### 2.4 Implementation Notes (Phase 2)
+
+- **Type Safety**:
+
+  - `BaseCurrency` interface matches the Swift RPC response structure exactly (`symbol`, `rate`, `timestamp`).
+  - TypeScript ensures type safety throughout the currency conversion chain.
+
+- **React Query Integration**:
+
+  - `useBaseCurrency` hook leverages React Query's built-in caching and stale-time management.
+  - `staleTime: 5 * 60 * 1000` marks data as fresh for 5 minutes, preventing unnecessary refetches.
+  - `refetchInterval: 5 * 60 * 1000` automatically refreshes in the background every 5 minutes.
+  - `retry: 2` provides resilience against transient network failures.
+  - Query key `["baseCurrency"]` is simple since the data is global (not user-specific).
+
+- **Component Design (EthValue)**:
+
+  - **Progressive enhancement**: Component gracefully degrades when currency data is unavailable—displays ETH value only without toggle.
+  - **Toggle UX**: Clickable button with dashed underline (muted opacity) that toggles between ETH and USD display on click.
+  - **Visual affordance**: Dashed underline indicates interactivity; hover state increases underline opacity.
+  - **State management**: Uses local `useState` to track toggle state independently per component instance.
+  - **Currency formatting**: Uses `Intl.NumberFormat` with `"en-US"` locale and `"USD"` currency for proper formatting ($1,234.56).
+  - **Props flexibility**:
+    - `showSymbol` prop allows hiding "ETH" suffix when needed (default: `true`)
+    - `className` prop enables custom styling while maintaining toggle functionality
+  - **Loading states**: Hook exposes `isLoading` but component doesn't show loading indicator—prefers showing ETH value immediately and enhancing with USD when available.
+  - **Accessibility**: Button with `title` attribute provides context for screen readers and hover tooltips.
+
+- **Browser API Integration**:
+
+  - Uses `browser.runtime.sendMessage` to communicate with background script via standard WebExtension messaging.
+  - Message format: `{ type: "WALLET_REQUEST", method: "stupid_getBaseCurrency", params: [] }`
+  - Response destructures `result` directly, assuming successful responses (React Query handles errors).
+
+- **Performance Considerations**:
+
+  - Hook is reusable across multiple components; React Query ensures only one fetch occurs even with multiple `useBaseCurrency()` calls.
+  - Tooltip component is lightweight; no performance impact on transaction flows.
+  - Component renders synchronously with ETH value; USD enhancement is non-blocking.
 
 ## Phase 3: Web UI Updates
 
@@ -471,6 +499,62 @@ With:
   <EthValue value={valueEth} />
 </div>
 ```
+
+### 3.3 Implementation Notes (Phase 3)
+
+- **Integration Strategy**:
+
+  - **SendTxModal**: Replaces static ETH displays with `<EthValue>` component for both transaction value and network fee.
+  - **CallDecoder**: Replaces ETH displays in both SimplifiedView and FullView to ensure consistency across all transaction detail views.
+  - **Minimal changes**: Only touched display logic; no changes to business logic, gas estimation, or transaction processing.
+
+- **User Experience Improvements**:
+
+  - **Transaction Value**: ETH amounts display with a dashed underline; clicking toggles to show real-time USD equivalent.
+  - **Network Fees**: Gas cost estimates are clickable to show USD, helping users understand actual cost in familiar currency.
+  - **Batch Calls**: Each call in a batch transaction has its own clickable currency toggle.
+  - **Consistent UX**: Same toggle behavior across simplified card view and expanded detail view.
+
+- **Preserved Functionality**:
+
+  - **Loading states**: "Estimating..." and "Unable to estimate" messages for gas remain unchanged.
+  - **Error handling**: Gas estimation errors still display gracefully without USD toggle.
+  - **Zero values**: CallDecoder correctly shows "0 ETH" with toggle in both views.
+  - **Contract creation**: "(contract creation)" text display unchanged.
+
+- **Component Reusability**:
+
+  - Single `<EthValue>` component used in 4 distinct locations:
+    1. SendTxModal transaction value (line 307)
+    2. SendTxModal gas fee (line 318)
+    3. CallDecoder simplified view (line 253)
+    4. CallDecoder full view (line 284)
+  - Each location shares the same currency hook, minimizing redundant API calls.
+
+- **React Query Optimization**:
+
+  - All `<EthValue>` components share the same `["baseCurrency"]` query cache.
+  - Single fetch serves multiple components across modal views.
+  - Cache remains valid for 5 minutes across all transaction flows.
+
+- **Import Organization**:
+
+  - `EthValue` imported alongside other component imports at the top of each file.
+  - Maintains consistent import ordering (components, then UI components, then utils).
+
+- **Build Impact**:
+
+  - Bundle size increased by ~3 KB (from 899 KB to 902 KB uncompressed).
+  - Gzip size remained stable (~248 KB).
+  - Minimal size increase due to currency formatting logic only (no heavy UI libraries).
+  - Performance impact negligible; no runtime performance degradation.
+
+- **Accessibility**:
+
+  - Button element provides native keyboard navigation (Space/Enter to activate).
+  - `title` attribute provides hover tooltip and context for screen readers.
+  - Visual affordance via dashed underline indicates interactivity.
+  - Button has `type="button"` to prevent form submission when used within forms.
 
 ## Phase 4: iOS App UI Updates
 
@@ -898,13 +982,12 @@ HStack {
 
 ## File Summary
 
-### New Files Created (5)
+### New Files Created (4)
 
 1. `ios-wallet/shared/CurrencyService.swift` - Chainlink oracle integration
 2. `ios-wallet/ios-wallet/CurrencyViewModel.swift` - SwiftUI currency state management
 3. `web-ui/src/hooks/use-base-currency.ts` - React Query hook
-4. `web-ui/src/components/EthValue.tsx` - Reusable ETH+USD display component
-5. `web-ui/src/components/ui/tooltip.tsx` - shadcn/ui Tooltip (via CLI generator)
+4. `web-ui/src/components/EthValue.tsx` - Reusable ETH+USD toggle component
 
 ### Files Modified (7)
 

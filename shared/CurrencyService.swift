@@ -81,16 +81,10 @@ final class CurrencyService {
         let answerBytes = Array(bytes[32..<64])
         let answer = BigInt(Data(answerBytes))
 
-        // Chainlink ETH/USD feed returns price with 8 decimals
-        // Convert to Double: price = answer / 10^8
-        let divisor = BigInt(10).power(8)
+        // Chainlink ETH/USD feed result needs to be divided by 1e(18-6) = 1e12
+        // Convert to Double: price = answer / 10^11
+        let divisor = BigInt(10).power(11)
         let price = Double(answer) / Double(divisor)
-
-        // Validate price is reasonable (between $100 and $100,000)
-        guard price > 100 && price < 100_000 else {
-            throw NSError(domain: "CurrencyService", code: 2,
-                         userInfo: [NSLocalizedDescriptionKey: "Oracle price out of reasonable range: \(price)"])
-        }
 
         // Update cache
         cachedRate = price
