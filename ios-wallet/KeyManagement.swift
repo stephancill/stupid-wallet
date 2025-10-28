@@ -37,6 +37,37 @@ enum KeyManagement {
         try ensureCiphertextInSharedAccessGroup(addressHex: addressHex)
         preflightIfNeeded(addressHex: addressHex)
     }
+    
+    static func importSeedPhrase(phrase: String, requireBiometricsOnly: Bool = false) throws {
+        // Create HD wallet from seed phrase
+        let hdWallet = try Wallet.HDEthereumWallet(mnemonicString: phrase)
+        
+        // Derive the first account (index 0) following standard Ethereum derivation path m/44'/60'/0'/0/0
+        let privateKey = try hdWallet.generateExternalPrivateKey(at: 0)
+        
+        // Convert to regular wallet and encrypt
+        let wallet = Wallet.EthereumWallet(privateKey: privateKey)
+        let addressHex = try wallet.address.eip55Description
+        
+        if requireBiometricsOnly {
+            try provisionSecretForAddress(addressHex: addressHex, accessGroup: Constants.accessGroup, biometricsOnly: true)
+        }
+        try wallet.encryptWallet(accessGroup: Constants.accessGroup)
+        try ensureCiphertextInSharedAccessGroup(addressHex: addressHex)
+        preflightIfNeeded(addressHex: addressHex)
+    }
+    
+    static func getAddressFromSeedPhrase(phrase: String) throws -> String {
+        // Create HD wallet from seed phrase
+        let hdWallet = try Wallet.HDEthereumWallet(mnemonicString: phrase)
+        
+        // Derive the first account (index 0)
+        let privateKey = try hdWallet.generateExternalPrivateKey(at: 0)
+        
+        // Get address
+        let wallet = Wallet.EthereumWallet(privateKey: privateKey)
+        return try wallet.address.eip55Description
+    }
 
     /// Rewrap the existing ciphertext to a new authentication policy by decrypting and re-encrypting.
     /// Requires the existing policy's auth at call time.

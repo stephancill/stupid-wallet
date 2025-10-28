@@ -83,7 +83,7 @@ struct ContentView: View {
                 if vm.hasWallet {
                     walletView
                 } else {
-                    setupView
+                    SetupView(vm: vm)
                 }
             }
             .toolbar {
@@ -104,39 +104,6 @@ struct ContentView: View {
         .sheet(isPresented: $showSettingsSheet) {
             SettingsView(vm: vm, showClearWalletConfirmation: $showClearWalletConfirmation)
         }
-    }
-
-    private var setupView: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Enter Private Key (hex)")
-                .font(.headline)
-            SecureField("0x...", text: $vm.privateKeyInput)
-                .textInputAutocapitalization(.never)
-                .disableAutocorrection(true)
-                .textFieldStyle(.roundedBorder)
-            Button(action: {
-                vm.savePrivateKey()
-                if vm.errorMessage == nil && vm.hasWallet {
-                    vm.privateKeyInput = ""
-                }
-            }) {
-                if vm.isSaving { ProgressView() } else { Text("Save") }
-            }
-            .buttonStyle(.borderedProminent)
-
-            Button(action: { vm.createNewWallet() }) {
-                if vm.isSaving { ProgressView() } else { Text("Create New Wallet") }
-            }
-            .buttonStyle(.bordered)
-
-            if let err = vm.errorMessage, !err.isEmpty {
-                Text(err)
-                    .foregroundColor(.red)
-                    .font(.footnote)
-            }
-            Spacer()
-        }
-        .padding()
     }
 
     private var walletView: some View {

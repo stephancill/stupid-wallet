@@ -93,52 +93,97 @@ final class WalletViewModel: ObservableObject {
         return ok
     }
 
-    func savePrivateKey() {
+    func importWallet(input: String) {
         errorMessage = nil
         isSaving = true
         defer { isSaving = false }
 
-        let trimmed = privateKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            errorMessage = "Private key is empty"
+            errorMessage = "Input is empty"
             return
         }
 
         do {
-            // Convert hex string to bytes
+            // Check if input is a hex private key
             let hexNoPrefix = trimmed.lowercased().hasPrefix("0x") ? String(trimmed.dropFirst(2)) : trimmed
-            var rawBytes: [UInt8] = []
-            rawBytes.reserveCapacity(hexNoPrefix.count / 2)
-            var idx = hexNoPrefix.startIndex
-            while idx < hexNoPrefix.endIndex {
-                let next = hexNoPrefix.index(idx, offsetBy: 2)
-                let byteStr = hexNoPrefix[idx..<next]
-                if let b = UInt8(byteStr, radix: 16) { rawBytes.append(b) }
-                idx = next
-            }
-
-            // Encrypt and store securely via KeyManagement helper
-            try KeyManagement.encryptPrivateKey(rawBytes: rawBytes, requireBiometricsOnly: false)
-
-            // Derive address from the raw bytes using Web3
-            let privateKeyData = Data(rawBytes)
-            let privateKey = try EthereumPrivateKey(privateKeyData)
-            let address = privateKey.address
-            let addr = address.hex(eip55: true)
-            addressHex = addr
-            hasWallet = true
-            if let defaults = UserDefaults(suiteName: appGroupId) {
-                defaults.set(addr, forKey: "walletAddress")
-                print("[Wallet] Saved address to app group store")
+            let isHex = hexNoPrefix.allSatisfy { $0.isHexDigit }
+            
+            if isHex && hexNoPrefix.count == 64 {
+                // It's a private key
+                try importPrivateKey(hexNoPrefix)
             } else {
-                print("[Wallet] ERROR: Could not open app group defaults to save address")
-            }
-            Task {
-                await refreshAllBalances()
-                await resolveENS()
+                // Assume it's a seed phrase
+                try importSeedPhrase(trimmed)
             }
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+    
+    private func importPrivateKey(_ hexNoPrefix: String) throws {
+        // Convert hex string to bytes
+        var rawBytes: [UInt8] = []
+        rawBytes.reserveCapacity(hexNoPrefix.count / 2)
+        var idx = hexNoPrefix.startIndex
+        while idx < hexNoPrefix.endIndex {
+            let next = hexNoPrefix.index(idx, offsetBy: 2)
+            let byteStr = hexNoPrefix[idx..<next]
+            guard let b = UInt8(byteStr, radix: 16) else {
+                throw NSError(domain: "WalletViewModel", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid hex character"])
+            }
+            rawBytes.append(b)
+            idx = next
+        }
+
+        // Encrypt and store securely via KeyManagement helper
+        try KeyManagement.encryptPrivateKey(rawBytes: rawBytes, requireBiometricsOnly: false)
+
+        // Derive address from the raw bytes using Web3
+        let privateKeyData = Data(rawBytes)
+        let privateKey = try EthereumPrivateKey(privateKeyData)
+        let address = privateKey.address
+        let addr = address.hex(eip55: true)
+        addressHex = addr
+        hasWallet = true
+        if let defaults = UserDefaults(suiteName: appGroupId) {
+            defaults.set(addr, forKey: "walletAddress")
+            print("[Wallet] Saved address to app group store")
+        } else {
+            print("[Wallet] ERROR: Could not open app group defaults to save address")
+        }
+        Task {
+            await refreshAllBalances()
+            await resolveENS()
+        }
+    }
+    
+    private func importSeedPhrase(_ phrase: String) throws {
+        // Use HDEthereumWallet to import seed phrase and derive the first account (index 0)
+        try KeyManagement.importSeedPhrase(phrase: phrase, requireBiometricsOnly: false)
+        
+        // Get the derived address
+        let address = try KeyManagement.getAddressFromSeedPhrase(phrase: phrase)
+        addressHex = address
+        hasWallet = true
+        
+        if let defaults = UserDefaults(suiteName: appGroupId) {
+            defaults.set(address, forKey: "walletAddress")
+            print("[Wallet] Saved address to app group store (from seed phrase)")
+        } else {
+            print("[Wallet] ERROR: Could not open app group defaults to save address")
+        }
+        
+        Task {
+            await refreshAllBalances()
+            await resolveENS()
+        }
+    }
+    
+    func savePrivateKey() {
+        importWallet(input: privateKeyInput)
+        if errorMessage == nil && hasWallet {
+            privateKeyInput = ""
         }
     }
 
