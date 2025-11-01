@@ -95,6 +95,7 @@
         const responseHandler = (event) => {
           if (
             event.source !== window ||
+            event.origin !== window.location.origin ||
             !event.data ||
             event.data.source !== "stupid-wallet-content" ||
             event.data.requestId !== requestId
@@ -163,7 +164,7 @@
             params: params || [],
             requestId: requestId,
           },
-          "*"
+          window.location.origin
         );
 
         // Set timeout to prevent hanging (45 seconds for embedded modal)
@@ -183,6 +184,7 @@
         const responseHandler = (event) => {
           if (
             event.source !== window ||
+            event.origin !== window.location.origin ||
             !event.data ||
             event.data.source !== "stupid-wallet-content" ||
             event.data.requestId !== requestId
@@ -218,7 +220,7 @@
             params: [],
             requestId: requestId,
           },
-          "*"
+          window.location.origin
         );
 
         // Set timeout to prevent hanging
@@ -235,6 +237,7 @@
         const responseHandler = (event) => {
           if (
             event.source !== window ||
+            event.origin !== window.location.origin ||
             !event.data ||
             event.data.source !== "stupid-wallet-content" ||
             event.data.requestId !== requestId
@@ -261,7 +264,7 @@
             params: [],
             requestId,
           },
-          "*"
+          window.location.origin
         );
         setTimeout(() => {
           window.removeEventListener("message", responseHandler);
@@ -276,6 +279,7 @@
         const responseHandler = (event) => {
           if (
             event.source !== window ||
+            event.origin !== window.location.origin ||
             !event.data ||
             event.data.source !== "stupid-wallet-content" ||
             event.data.requestId !== requestId
@@ -296,7 +300,7 @@
             params: [chainParams],
             requestId,
           },
-          "*"
+          window.location.origin
         );
         setTimeout(() => {
           window.removeEventListener("message", responseHandler);
@@ -311,6 +315,7 @@
         const responseHandler = (event) => {
           if (
             event.source !== window ||
+            event.origin !== window.location.origin ||
             !event.data ||
             event.data.source !== "stupid-wallet-content" ||
             event.data.requestId !== requestId
@@ -336,7 +341,7 @@
             params: [{ chainId }],
             requestId,
           },
-          "*"
+          window.location.origin
         );
         setTimeout(() => {
           window.removeEventListener("message", responseHandler);
@@ -352,6 +357,7 @@
         const responseHandler = (event) => {
           if (
             event.source !== window ||
+            event.origin !== window.location.origin ||
             !event.data ||
             event.data.source !== "stupid-wallet-content" ||
             event.data.requestId !== requestId
@@ -379,7 +385,7 @@
             params,
             requestId,
           },
-          "*"
+          window.location.origin
         );
 
         setTimeout(() => {

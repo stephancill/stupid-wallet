@@ -19,13 +19,17 @@ function postWindowResponse(requestId: string, response: any) {
         requestId,
         response,
       },
-      "*"
+      window.location.origin
     );
   } catch {}
 }
 
 function handleWindowMessage(event: MessageEvent) {
   if (event.source !== window) return;
+  if (event.origin !== window.location.origin) {
+    debugLog("Rejected message from invalid origin:", event.origin);
+    return;
+  }
   const data = (event as any).data;
   if (!data || data.source !== "stupid-wallet-inject") return;
 
