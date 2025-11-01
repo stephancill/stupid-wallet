@@ -70,6 +70,13 @@ export function App({ container }: { container: HTMLDivElement }) {
   React.useEffect(() => {
     const handleMessage = async (event: MessageEvent) => {
       if (event.source !== window) return;
+      if (event.origin !== window.location.origin) {
+        console.warn(
+          "[Security] Rejected message from invalid origin:",
+          event.origin
+        );
+        return;
+      }
       if (!event.data || event.data.source !== "stupid-wallet-inject") return;
 
       if (FAST_METHODS.includes(event.data.method)) return; // Non-UI handled by bridge
@@ -91,7 +98,7 @@ export function App({ container }: { container: HTMLDivElement }) {
               requestId: event.data.requestId,
               response: finalResponse,
             },
-            "*"
+            window.location.origin
           );
         };
 
@@ -114,7 +121,7 @@ export function App({ container }: { container: HTMLDivElement }) {
             requestId: event.data.requestId,
             response: { error: error?.message || "Unknown error" },
           },
-          "*"
+          window.location.origin
         );
       }
     };
