@@ -61,6 +61,7 @@
 
         case "eth_blockNumber":
         case "eth_estimateGas":
+        case "eth_getCode":
         case "eth_getTransactionByHash":
         case "eth_getTransactionReceipt":
         case "eth_getBlockByNumber":

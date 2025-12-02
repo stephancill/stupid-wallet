@@ -141,6 +141,9 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     case "eth_estimateGas":
       let params = messageDict["params"] as? [Any]
       return await handleEstimateGas(params: params)
+    case "eth_getCode":
+      let params = messageDict["params"] as? [Any]
+      return await handleGetCode(params: params)
     case "eth_getTransactionByHash":
       let params = messageDict["params"] as? [Any]
       return await handleGetTransactionByHash(params: params)
@@ -252,6 +255,37 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         return ["result": hexString]
       } else {
         return ["error": "Unexpected response type for eth_estimateGas"]
+      }
+    } catch {
+      return ["error": error.localizedDescription]
+    }
+  }
+
+  private func handleGetCode(params: [Any]?) async -> [String: Any] {
+    guard let params = params, params.count >= 1 else {
+      return ["error": "Invalid eth_getCode params"]
+    }
+    
+    // First param is address, second is optional block parameter (defaults to "latest")
+    guard let address = params[0] as? String, !address.isEmpty else {
+      return ["error": "Address parameter must be a string"]
+    }
+    
+    let blockParam = (params.count >= 2) ? (params[1] as? String ?? "latest") : "latest"
+    
+    let (rpcURL, _) = Constants.Networks.currentNetwork()
+    guard let url = URL(string: rpcURL) else {
+      return ["error": "Invalid RPC URL"]
+    }
+    
+    do {
+      // Use shared JSONRPC utility to query node directly
+      let result: Any = try await JSONRPC.request(
+        rpcURL: url, method: "eth_getCode", params: [address, blockParam])
+      if let hexString = result as? String {
+        return ["result": hexString]
+      } else {
+        return ["error": "Unexpected response type for eth_getCode"]
       }
     } catch {
       return ["error": error.localizedDescription]
