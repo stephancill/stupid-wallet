@@ -141,6 +141,9 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     case "eth_estimateGas":
       let params = messageDict["params"] as? [Any]
       return await handleEstimateGas(params: params)
+    case "eth_call":
+      let params = messageDict["params"] as? [Any]
+      return await handleEthCall(params: params)
     case "eth_getCode":
       let params = messageDict["params"] as? [Any]
       return await handleGetCode(params: params)
@@ -255,6 +258,29 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         return ["result": hexString]
       } else {
         return ["error": "Unexpected response type for eth_estimateGas"]
+      }
+    } catch {
+      return ["error": error.localizedDescription]
+    }
+  }
+
+  private func handleEthCall(params: [Any]?) async -> [String: Any] {
+    guard let params = params, params.count >= 1 else {
+      return ["error": "Invalid eth_call params"]
+    }
+    let (rpcURL, _) = Constants.Networks.currentNetwork()
+    guard let url = URL(string: rpcURL) else {
+      return ["error": "Invalid RPC URL"]
+    }
+    do {
+      let result: Any = try await JSONRPC.request(
+        rpcURL: url, method: "eth_call", params: params)
+      if let hexString = result as? String {
+        return ["result": hexString]
+      } else if result is NSNull {
+        return ["result": "0x"]
+      } else {
+        return ["error": "Unexpected response type for eth_call"]
       }
     } catch {
       return ["error": error.localizedDescription]
