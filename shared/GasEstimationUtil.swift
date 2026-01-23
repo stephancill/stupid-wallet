@@ -36,9 +36,9 @@ enum GasEstimationUtil {
     // MARK: - Gas Limit Estimation with Buffer
     
     /// Standard buffer calculation for gas estimates
-    /// Uses 20% buffer or minimum 1,500 gas, whichever is larger
+    /// Uses 50% buffer or minimum 1,500 gas, whichever is larger
     static func applyGasBuffer(to estimate: BigUInt) -> BigUInt {
-        let buffer = max(estimate / BigUInt(5), BigUInt(1_500))
+        let buffer = max(estimate / BigUInt(2), BigUInt(1_500))
         let padded = estimate + buffer
         return max(padded, BigUInt(21_000))
     }

@@ -243,9 +243,21 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
   }
 
   private func handleEstimateGas(params: [Any]?) async -> [String: Any] {
-    guard let params = params, params.count >= 1 else {
+    guard var params = params, params.count >= 1 else {
       return ["error": "Invalid eth_estimateGas params"]
     }
+
+    // Add default gas limit for simulation if not provided
+    // Without this, some RPCs use a low default (e.g., 1M) causing estimation to fail
+    // for complex transactions like multicalls
+    if var txObj = params[0] as? [String: Any] {
+      if txObj["gas"] == nil {
+        // Use 5M gas limit for estimation (max allowed by some RPCs)
+        txObj["gas"] = "0x4c4b40"
+        params[0] = txObj
+      }
+    }
+
     let (rpcURL, _) = Constants.Networks.currentNetwork()
     guard let url = URL(string: rpcURL) else {
       return ["error": "Invalid RPC URL"]
