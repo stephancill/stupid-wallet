@@ -34,5 +34,4 @@ bun run build
 echo "[pre-xcodebuild] Build outputs:"
 ls -lah "$REPO_ROOT/safari/Resources/dist" || true
 
-echo "[pre-xcodebuild] Done (build trigger commit)."
-
+echo "[pre-xcodebuild] Done (Xcode Cloud build trigger)."
