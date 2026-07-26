@@ -4,7 +4,7 @@ import { createRoot, Root } from "react-dom/client";
 import shadowCss from "./shadow.css?inline";
 
 export type ShadowMount = {
-  container: HTMLDivElement;
+  container: HTMLElement;
   cleanup: () => void;
   root: Root;
   shadow: ShadowRoot | HTMLElement;
@@ -18,12 +18,26 @@ export function getPortalContainer(): HTMLDivElement | null {
 }
 
 export function createShadowMount(): ShadowMount {
-  const container = document.createElement("div");
+  const supportsModalDialog =
+    typeof HTMLDialogElement !== "undefined" &&
+    typeof HTMLDialogElement.prototype.showModal === "function";
+  const container = document.createElement(
+    supportsModalDialog ? "dialog" : "div"
+  ) as HTMLElement;
   container.id = "stupid-wallet-modal-root";
   container.style.position = "fixed";
   container.style.inset = "0";
   container.style.zIndex = "2147483647";
   container.style.pointerEvents = "none";
+  container.style.width = "100vw";
+  container.style.height = "100vh";
+  container.style.maxWidth = "none";
+  container.style.maxHeight = "none";
+  container.style.margin = "0";
+  container.style.padding = "0";
+  container.style.border = "0";
+  container.style.background = "transparent";
+  container.style.color = "inherit";
 
   let shadow: ShadowRoot | HTMLElement;
   try {
@@ -32,7 +46,7 @@ export function createShadowMount(): ShadowMount {
     } else {
       shadow = container;
     }
-  } catch (_) {
+  } catch {
     // Fallback for environments where Shadow DOM is restricted
     shadow = container;
   }
@@ -101,6 +115,11 @@ export function createShadowMount(): ShadowMount {
   const cleanup = () => {
     try {
       root.unmount();
+    } catch {}
+    try {
+      if (container instanceof HTMLDialogElement && container.open) {
+        container.close();
+      }
     } catch {}
     container.remove();
     if (currentPortalContainer === portalEl) {

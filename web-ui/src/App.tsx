@@ -18,7 +18,7 @@ type ModalState = {
   resolve: (r: ApprovalResult) => void;
 };
 
-export function App({ container }: { container: HTMLDivElement }) {
+export function App({ container }: { container: HTMLElement }) {
   const [modal, setModal] = React.useState<ModalState | null>(null);
 
   const normalizePersonalSignParams = React.useCallback(
@@ -133,6 +133,13 @@ export function App({ container }: { container: HTMLDivElement }) {
   React.useEffect(() => {
     try {
       container.style.pointerEvents = modal ? "auto" : "none";
+      if (container instanceof HTMLDialogElement) {
+        if (modal && !container.open) {
+          container.showModal();
+        } else if (!modal && container.open) {
+          container.close();
+        }
+      }
     } catch {}
   }, [modal, container]);
 
@@ -168,35 +175,27 @@ export function App({ container }: { container: HTMLDivElement }) {
   };
 
   const onReject = async () => {
-    try {
-      const finalResponse = await browser.runtime.sendMessage({
-        type: "WALLET_CONFIRM",
-        approved: false,
-        method: modal.method,
-        params: computeParams(),
-        requestId: modal.requestId,
-      });
-      modal.resolve({ approved: false, finalResponse });
-      setModal(null);
-    } catch (e) {
-      throw e;
-    }
+    const finalResponse = await browser.runtime.sendMessage({
+      type: "WALLET_CONFIRM",
+      approved: false,
+      method: modal.method,
+      params: computeParams(),
+      requestId: modal.requestId,
+    });
+    modal.resolve({ approved: false, finalResponse });
+    setModal(null);
   };
 
   const onApprove = async () => {
-    try {
-      const finalResponse = await browser.runtime.sendMessage({
-        type: "WALLET_CONFIRM",
-        approved: true,
-        method: modal.method,
-        params: computeParams(),
-        requestId: modal.requestId,
-      });
-      modal.resolve({ approved: true, finalResponse });
-      setModal(null);
-    } catch (e) {
-      throw e;
-    }
+    const finalResponse = await browser.runtime.sendMessage({
+      type: "WALLET_CONFIRM",
+      approved: true,
+      method: modal.method,
+      params: computeParams(),
+      requestId: modal.requestId,
+    });
+    modal.resolve({ approved: true, finalResponse });
+    setModal(null);
   };
 
   if (

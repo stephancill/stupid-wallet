@@ -373,6 +373,12 @@ Acceptance:
   - Iframe/embedded contexts: domain extraction yields correct hostname.
   - Multi-tab: connection shared across tabs for same domain.
 
+##### Implementation Notes (Modal Layering)
+
+- The injected wallet UI host now uses a native `<dialog>` container when `showModal()` is available, falling back to the previous fixed `<div>` host otherwise.
+- During an active wallet request, `App` calls `showModal()` so the wallet confirmation UI enters the browser top layer. This avoids site-owned modal/dialog UI, such as networked.art sign-in modals, rendering above the wallet confirmation despite the wallet host already using the maximum CSS z-index.
+- The native dialog backdrop is transparent; the existing wallet overlay remains responsible for dimming and interaction blocking.
+
 Acceptance:
 
 - All acceptance criteria from the Testing section pass on Simulator.
