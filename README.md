@@ -1,4 +1,4 @@
-## ⚠️ Archived
+## Archived
 
 This repository has been **archived**. Development has moved to the new repository:
 
