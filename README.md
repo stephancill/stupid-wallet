@@ -1,3 +1,13 @@
+## ⚠️ Archived
+
+This repository has been **archived**. Development has moved to the new repository:
+
+👉 **https://github.com/stephancill/stupid-wallet-v2**
+
+Please direct all issues, contributions, and development activity there.
+
+---
+
 ## stupid wallet
 
 An iOS/macOS SwiftUI wallet app bundled with a Safari Web Extension that injects an EIP-1193 provider and supports multi‑provider discovery via EIP‑6963.
